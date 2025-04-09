@@ -8,92 +8,92 @@
 
 @layer base {
   :root {
-    /* Android Material Design color palette - Light mode */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 20%;
+    /* Premium color palette - Light mode */
+    --background: 220 25% 97%;
+    --foreground: 224 71% 4%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 20%;
+    --card-foreground: 224 71% 4%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 20%;
+    --popover-foreground: 224 71% 4%;
 
-    --primary: 210 100% 45%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 222 89% 55%;
+    --primary-foreground: 210 40% 98%;
 
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 240 5.9% 10%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 5.9% 10%;
+    --accent: 213 94% 68%;
+    --accent-foreground: 222 47% 11%;
 
-    --destructive: 0 75% 42%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
 
-    --border: 240 5% 90%;
-    --input: 240 5% 90%;
-    --ring: 210 100% 45%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222 89% 55%;
 
-    /* Material Design rounded corners */
-    --radius: 0.5rem;
+    /* Modern rounded corners */
+    --radius: 0.75rem;
 
     /* Sidebar colors */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 222 89% 55%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 224.3 76.3% 48%;
 
-    /* Category colors for expense cards */
-    --groceries-color: #4CAF50;
-    --utilities-color: #2196F3;
-    --entertainment-color: #9C27B0;
-    --transportation-color: #FF9800;
-    --dining-color: #F44336;
-    --shopping-color: #3F51B5;
-    --health-color: #E91E63;
-    --travel-color: #00BCD4;
-    --housing-color: #009688;
-    --education-color: #FF5722;
-    --subscriptions-color: #673AB7;
-    --other-color: #607D8B;
+    /* Category colors */
+    --groceries-color: #38A169;
+    --utilities-color: #3182CE;
+    --entertainment-color: #805AD5;
+    --transportation-color: #DD6B20;
+    --dining-color: #E53E3E;
+    --shopping-color: #4C51BF;
+    --health-color: #D53F8C;
+    --travel-color: #00B5D8;
+    --housing-color: #2F855A;
+    --education-color: #DD6B20;
+    --subscriptions-color: #6B46C1;
+    --other-color: #718096;
   }
 
   .dark {
-    /* Android Material Design color palette - Dark mode */
-    --background: 240 10% 10%;
-    --foreground: 0 0% 95%;
+    /* Premium color palette - Dark mode */
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
 
-    --card: 240 10% 15%;
-    --card-foreground: 0 0% 95%;
+    --card: 224 71% 8%;
+    --card-foreground: 213 31% 91%;
 
-    --popover: 240 10% 15%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 224 71% 8%;
+    --popover-foreground: 213 31% 91%;
 
-    --primary: 210 100% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222 47% 11%;
 
-    --secondary: 240 5% 25%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 240 5% 25%;
-    --muted-foreground: 240 5% 70%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 240 5% 25%;
-    --accent-foreground: 0 0% 95%;
+    --accent: 217.2 70% 50%;
+    --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 75% 50%;
-    --destructive-foreground: 0 0% 95%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 210 40% 98%;
 
-    --border: 240 5% 25%;
-    --input: 240 5% 25%;
-    --ring: 210 100% 50%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
   }
 }
 
@@ -105,28 +105,24 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    -webkit-tap-highlight-color: transparent; /* Remove tap highlight on Android */
+    -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
   }
 
-  /* Android native scrollbar */
+  /* Premium scrollbar */
   ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 6px;
+    height: 6px;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    @apply bg-transparent rounded-full;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-muted-foreground/30 rounded-full;
+    @apply bg-muted-foreground/30 rounded-full transition-colors hover:bg-muted-foreground/60;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/50;
-  }
-
-  /* Android-style ripple effect for buttons */
+  /* Modern ripple effect for buttons */
   .ripple {
     position: relative;
     overflow: hidden;
@@ -141,7 +137,7 @@
     top: 0;
     left: 0;
     pointer-events: none;
-    background-image: radial-gradient(circle, #fff 10%, transparent 10.01%);
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.3) 10%, transparent 10.01%);
     background-repeat: no-repeat;
     background-position: 50%;
     transform: scale(10, 10);
@@ -153,11 +149,6 @@
     transform: scale(0, 0);
     opacity: 0.3;
     transition: 0s;
-  }
-
-  /* Android-specific content padding */
-  .android-content-padding {
-    @apply pb-4 pt-2 px-4;
   }
 
   /* Page transitions */
@@ -185,109 +176,84 @@
 }
 
 @layer components {
-  /* Android-style cards with proper elevation */
-  .android-card {
-    @apply bg-card rounded-lg shadow-subtle border-0 overflow-hidden;
-  }
-
-  /* Material Design FAB button */
-  .android-fab {
-    @apply fixed z-50 rounded-full w-14 h-14 flex items-center justify-center shadow-higher bg-primary text-primary-foreground transition-all hover:brightness-110 active:brightness-90;
-  }
-
-  /* Bottom sheet dialog for Android */
-  .android-bottom-sheet {
-    @apply fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-background p-4 shadow-higher;
-  }
-
-  /* Android-style list items */
-  .android-list-item {
-    @apply flex items-center px-4 py-3 hover:bg-accent/50 active:bg-accent/80 transition-colors;
-  }
-
-  /* Android-style toggle switch */
-  .android-switch {
-    @apply w-10 h-5 rounded-full bg-muted relative transition-colors duration-200;
-  }
-
-  .android-switch[data-state="checked"] {
-    @apply bg-primary;
-  }
-
-  .android-switch-thumb {
-    @apply block w-4 h-4 bg-white rounded-full shadow-subtle transition-transform duration-200;
-  }
-
-  .android-switch[data-state="checked"] .android-switch-thumb {
-    @apply translate-x-5;
+  /* Premium cards with proper elevation */
+  .premium-card {
+    @apply bg-card rounded-xl shadow-premium border-0 overflow-hidden transition-all duration-300 hover:shadow-premium-hover;
   }
 
   /* Glass card */
   .glass-card {
-    @apply bg-white/70 dark:bg-gray-900/70 backdrop-blur-sm border border-white/20 dark:border-gray-800/50 shadow-subtle;
+    @apply bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border border-white/20 dark:border-gray-800/50 shadow-subtle;
   }
 
-  /* Primary button with ripple effect */
-  .btn-primary {
+  /* Shimmer loading effect */
+  .shimmer {
+    @apply relative overflow-hidden bg-muted/50 before:absolute before:inset-0 before:-translate-x-full before:animate-shimmer before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent;
+  }
+
+  /* Premium button */
+  .btn-premium {
     @apply relative overflow-hidden ripple bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-medium 
-    shadow-[0_0_0_0_rgba(59,130,246,0)] transition-all duration-300 
-    hover:shadow-[0_0_20px_5px_rgba(59,130,246,0.3)] focus:outline-none focus:ring-2 focus:ring-primary/50;
+    shadow-button transition-all duration-300 
+    hover:brightness-110 active:brightness-90 focus:outline-none focus:ring-2 focus:ring-primary/50;
   }
 
-  /* Android-style input fields */
-  .android-input {
-    @apply h-12 px-4 rounded-md border bg-transparent focus:border-primary transition-colors duration-200;
+  /* Premium input fields */
+  .premium-input {
+    @apply h-12 px-4 rounded-lg border bg-transparent focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors duration-200;
   }
 
   /* Material chip/tag component */
-  .android-chip {
+  .premium-chip {
     @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground;
+  }
+  
+  /* Premium expense card */
+  .expense-card {
+    @apply rounded-xl shadow-card border-0 overflow-hidden transition-all duration-300 
+    hover:shadow-card-hover active:scale-98;
+  }
+  
+  /* Category badge */
+  .category-badge {
+    @apply flex items-center rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+
+  /* Premium data display */
+  .data-display {
+    @apply bg-gradient-to-br from-card to-card/80 backdrop-blur-sm rounded-xl p-4 shadow-premium transition-all duration-300 hover:shadow-premium-hover;
   }
 }
 
-/* Individual element animations */
-.animate-delayed-1 {
+/* Animation utilities */
+.animate-delay-100 {
   animation-delay: 100ms;
 }
 
-.animate-delayed-2 {
+.animate-delay-200 {
   animation-delay: 200ms;
 }
 
-.animate-delayed-3 {
+.animate-delay-300 {
   animation-delay: 300ms;
 }
 
-.animate-delayed-4 {
+.animate-delay-400 {
   animation-delay: 400ms;
 }
 
-.animate-delayed-5 {
+.animate-delay-500 {
   animation-delay: 500ms;
 }
 
-/* Android-specific styles for expense cards */
-.expense-card {
-  @apply rounded-lg shadow-subtle border-0 overflow-hidden transition-all active:scale-98 hover:shadow-elevated;
-}
-
-/* Material Design ripple effect */
-.md-ripple {
-  @apply relative overflow-hidden;
-}
-
-.md-ripple::after {
-  content: '';
-  @apply absolute block inset-0 opacity-0 pointer-events-none;
-  background-image: radial-gradient(circle, currentColor 10%, transparent 10.01%);
-  background-repeat: no-repeat;
-  background-position: 50%;
-  transform: scale(10, 10);
-  transition: transform 0.5s, opacity 0.8s;
-}
-
-.md-ripple:active::after {
-  transform: scale(0, 0);
-  opacity: 0.2;
-  transition: 0s;
-}
+/* Staggered animation for multiple elements */
+.stagger-item:nth-child(1) { animation-delay: 0ms; }
+.stagger-item:nth-child(2) { animation-delay: 50ms; }
+.stagger-item:nth-child(3) { animation-delay: 100ms; }
+.stagger-item:nth-child(4) { animation-delay: 150ms; }
+.stagger-item:nth-child(5) { animation-delay: 200ms; }
+.stagger-item:nth-child(6) { animation-delay: 250ms; }
+.stagger-item:nth-child(7) { animation-delay: 300ms; }
+.stagger-item:nth-child(8) { animation-delay: 350ms; }
+.stagger-item:nth-child(9) { animation-delay: 400ms; }
+.stagger-item:nth-child(10) { animation-delay: 450ms; }

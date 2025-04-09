@@ -14,7 +14,11 @@ const config: CapacitorConfig = {
     backgroundColor: "#FFFFFF",
     // Android-specific UI adjustments
     navigationBarColor: "#FFFFFF",
-    navigationBarLight: true
+    navigationBarLight: true,
+    // Add explicit setting for Android permissions
+    useLegacyStorage: true,
+    // Add the Network Security Config
+    overrideNetworkSecurityConfig: true
   },
   plugins: {
     CapacitorHttp: {
@@ -22,11 +26,32 @@ const config: CapacitorConfig = {
     },
     Network: {
       enabled: true
+    },
+    FileOpener: {
+      enabled: true
+    },
+    Permissions: {
+      enabled: true,
+      permissionRequestOrder: ["storage"]
+    },
+    Filesystem: {
+      enabled: true,
+      // Add Android permission options
+      androidPermissions: [
+        "READ_EXTERNAL_STORAGE", 
+        "WRITE_EXTERNAL_STORAGE",
+        "MANAGE_EXTERNAL_STORAGE"
+      ]
+    },
+    FilePicker: {
+      enabled: true
     }
   },
   // Use the exact package name as configured in Google API Console
   appUrlScheme: 'app.lovable.moneyminder',
-  handleApplicationNotifications: false
+  ios: {
+    contentInset: 'always'
+  }
 };
 
 export default config;

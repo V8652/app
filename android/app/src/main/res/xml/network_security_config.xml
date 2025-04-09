@@ -10,5 +10,7 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">lovableproject.com</domain>
+        <!-- Allow file:// URLs -->
+        <domain includeSubdomains="true">file</domain>
     </domain-config>
 </network-security-config>

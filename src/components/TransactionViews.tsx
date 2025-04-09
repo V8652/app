@@ -1,5 +1,5 @@
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Expense, Income, ExpenseCategory, IncomeCategory } from '@/types';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,7 @@ import {
   DollarSign, Store, Tag, Filter
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { getUserCategories } from '@/lib/db';
 
 interface TransactionViewsProps {
   expenses: Expense[];
@@ -34,6 +35,7 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
   const [sortField, setSortField] = useState<'date' | 'amount' | 'merchantName'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [activeTab, setActiveTab] = useState<'expenses' | 'incomes'>('expenses');
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
 
   // Get unique payment methods
   const paymentMethods = useMemo(() => {
@@ -45,6 +47,22 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
     });
     return Array.from(methodsSet);
   }, [expenses, incomes]);
+
+  // Load custom category colors
+  useEffect(() => {
+    const loadCategoryColors = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        if (userCategories.categoryColors) {
+          setCategoryColors(userCategories.categoryColors);
+        }
+      } catch (error) {
+        console.error('Error loading category colors:', error);
+      }
+    };
+    
+    loadCategoryColors();
+  }, []);
 
   // Filter and sort transactions
   const filteredTransactions = useMemo(() => {
@@ -95,10 +113,15 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
     }).format(amount);
   };
 
-  // Get category color
-  const getCategoryColor = (category: string) => {
-    const categoryColors: Record<string, string> = {
-      // Expense categories
+  // Get category color - updated to use custom colors
+  const getCategoryColor = (category: string): string => {
+    // Check if we have a custom color for this category
+    if (categoryColors[category]) {
+      return `style="background-color: ${categoryColors[category]}; color: #fff"`;
+    }
+    
+    // Fallback to default colors
+    const defaultCategoryColors: Record<string, string> = {
       groceries: 'bg-green-100 text-green-800',
       utilities: 'bg-blue-100 text-blue-800',
       entertainment: 'bg-purple-100 text-purple-800',
@@ -110,7 +133,6 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
       housing: 'bg-emerald-100 text-emerald-800',
       education: 'bg-orange-100 text-orange-800',
       subscriptions: 'bg-violet-100 text-violet-800',
-      // Income categories
       salary: 'bg-green-100 text-green-800',
       freelance: 'bg-blue-100 text-blue-800',
       investment: 'bg-purple-100 text-purple-800',
@@ -119,7 +141,7 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
       other: 'bg-gray-100 text-gray-800'
     };
     
-    return categoryColors[category] || 'bg-gray-100 text-gray-800';
+    return defaultCategoryColors[category] || 'bg-gray-100 text-gray-800';
   };
 
   // Toggle sort direction or change sort field
@@ -154,6 +176,29 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
         ))}
       </>
     );
+  };
+
+  // Helper to render badge based on category - fixed to handle both CSS class and inline style
+  const renderCategoryBadge = (category: string) => {
+    if (categoryColors[category]) {
+      return (
+        <Badge 
+          variant="outline" 
+          style={{
+            backgroundColor: categoryColors[category],
+            color: '#fff'
+          }}
+        >
+          {category.replace(/-/g, ' ')}
+        </Badge>
+      );
+    } else {
+      return (
+        <Badge variant="outline" className={getCategoryColor(category)}>
+          {category.replace(/-/g, ' ')}
+        </Badge>
+      );
+    }
   };
 
   return (
@@ -278,9 +323,7 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
                         <TableCell>{format(new Date(transaction.date), 'MMM d, yyyy')}</TableCell>
                         <TableCell className="font-medium">{transaction.merchantName}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={getCategoryColor(transaction.category)}>
-                            {transaction.category}
-                          </Badge>
+                          {renderCategoryBadge(transaction.category)}
                         </TableCell>
                         <TableCell className="font-semibold text-red-600">
                           {formatCurrency(transaction.amount, transaction.currency)}
@@ -305,9 +348,7 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
                         <div className="flex flex-col space-y-3">
                           <div className="flex justify-between items-start">
                             <div className="font-medium">{transaction.merchantName}</div>
-                            <Badge variant="outline" className={getCategoryColor(transaction.category)}>
-                              {transaction.category}
-                            </Badge>
+                            {renderCategoryBadge(transaction.category)}
                           </div>
                           
                           <div className="text-xl font-bold text-red-600">
@@ -381,9 +422,7 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
                         <TableCell>{format(new Date(transaction.date), 'MMM d, yyyy')}</TableCell>
                         <TableCell className="font-medium">{transaction.merchantName}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={getCategoryColor(transaction.category)}>
-                            {transaction.category}
-                          </Badge>
+                          {renderCategoryBadge(transaction.category)}
                         </TableCell>
                         <TableCell className="font-semibold text-green-600">
                           {formatCurrency(transaction.amount, transaction.currency)}
@@ -407,9 +446,7 @@ const TransactionViews = ({ expenses, incomes }: TransactionViewsProps) => {
                         <div className="flex flex-col space-y-3">
                           <div className="flex justify-between items-start">
                             <div className="font-medium">{transaction.merchantName}</div>
-                            <Badge variant="outline" className={getCategoryColor(transaction.category)}>
-                              {transaction.category}
-                            </Badge>
+                            {renderCategoryBadge(transaction.category)}
                           </div>
                           
                           <div className="text-xl font-bold text-green-600">

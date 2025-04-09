@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -20,7 +20,7 @@ import { CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Income, IncomeCategory } from '@/types';
-import { updateTransaction } from '@/lib/db';
+import { updateTransaction, getUserCategories } from '@/lib/db';
 
 const incomeSchema = z.object({
   merchantName: z.string().min(1, 'Source name is required'),
@@ -42,6 +42,30 @@ interface IncomeEditFormProps {
 
 const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
+  
+  // FIX: Use a form key to force re-creation of the form when income changes
+  const formKey = income?.id || 'default-key';
+  
+  // Load custom categories
+  useEffect(() => {
+    const loadCustomCategories = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        if (userCategories.incomeCategories) {
+          setCustomCategories(userCategories.incomeCategories);
+        }
+        if (userCategories.categoryColors) {
+          setCategoryColors(userCategories.categoryColors);
+        }
+      } catch (error) {
+        console.error('Error loading custom categories:', error);
+      }
+    };
+    
+    loadCustomCategories();
+  }, []);
   
   const form = useForm<IncomeFormValues>({
     resolver: zodResolver(incomeSchema),
@@ -55,6 +79,18 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
     },
   });
   
+  // FIX: Update form values when income changes
+  useEffect(() => {
+    form.reset({
+      merchantName: income.merchantName,
+      amount: income.amount,
+      paymentMethod: income.paymentMethod || '',
+      date: new Date(income.date),
+      category: income.category,
+      notes: income.notes || '',
+    });
+  }, [income, form]);
+  
   const handleSubmit = async (values: IncomeFormValues) => {
     setIsSubmitting(true);
     try {
@@ -67,6 +103,7 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
         category: values.category as IncomeCategory,
         notes: values.notes || '',
         isEdited: true,
+        currency: income.currency || 'INR',
       };
       
       await updateTransaction(updatedIncome);
@@ -79,9 +116,14 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
     }
   };
   
+  // Helper function to get color for a category
+  const getCategoryColor = (category: string): string => {
+    return categoryColors[category] || '#8E9196';
+  };
+  
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Income</DialogTitle>
           <DialogDescription>
@@ -132,12 +174,23 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="salary">Salary</SelectItem>
-                      <SelectItem value="freelance">Freelance</SelectItem>
-                      <SelectItem value="investment">Investment</SelectItem>
-                      <SelectItem value="gift">Gift</SelectItem>
-                      <SelectItem value="refund">Refund</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      {/* Only include 'other' as the default category */}
+                      <SelectItem value="other" className="capitalize">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getCategoryColor('other') }}></div>
+                          <span>Other</span>
+                        </div>
+                      </SelectItem>
+                      
+                      {/* Include all custom categories */}
+                      {customCategories.map(category => (
+                        <SelectItem key={category} value={category} className="capitalize">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getCategoryColor(category) }}></div>
+                            <span>{category.replace(/-/g, ' ')}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -212,7 +265,7 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
               )}
             />
             
-            <DialogFooter>
+            <DialogFooter className="mt-6 pt-2 border-t">
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>

@@ -1,218 +1,159 @@
+
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { 
-  Download, Upload, FileJson, FileSpreadsheet, 
-  FileUp, FileDown, Loader2 
-} from 'lucide-react';
-import { 
-  exportTransactions, 
-  exportTransactionsToCSV, 
-  importTransactions,
-  importTransactionsFromCSV 
-} from '@/lib/import-export';
+import { Button } from '@/components/ui/button';
+import { Download, Upload } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { exportTransactionsToCSV, importTransactionsFromCSV, pickFile } from '@/lib/import-export';
+import { checkAndRequestStoragePermissions } from '@/lib/import-export';
+import { isAndroidDevice, isCapacitorApp } from '@/lib/export-path';
 
 interface DataImportExportProps {
   onDataChanged: () => void;
 }
 
 const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
-  const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-
-  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    setIsImporting(true);
+  const [isImporting, setIsImporting] = useState(false);
+  const isAndroid = isAndroidDevice();
+  const isCapacitor = isCapacitorApp();
+  
+  // Function to handle transaction data export
+  const handleExportTransactions = async () => {
     try {
-      const file = files[0];
-      await importTransactions(file);
-      onDataChanged();
+      setIsExporting(true);
+      console.log('Starting transaction export...');
+      
+      // Request storage permissions first on Android
+      const hasPermissions = await checkAndRequestStoragePermissions();
+      console.log('Storage permissions check result:', hasPermissions);
+      
+      if (!hasPermissions) {
+        toast({
+          title: "Permission Denied",
+          description: "Storage permissions are required to export data.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Export transactions to CSV with a timestamp in the filename
+      const date = new Date();
+      const timestamp = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      await exportTransactionsToCSV(`transactions_${timestamp}.csv`);
+      console.log('Transaction export completed');
     } catch (error) {
-      console.error('Error importing JSON:', error);
-    } finally {
-      setIsImporting(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    setIsImporting(true);
-    try {
-      const file = files[0];
-      await importTransactionsFromCSV(file);
-      onDataChanged();
-    } catch (error) {
-      console.error('Error importing CSV:', error);
-    } finally {
-      setIsImporting(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleExportJSON = async () => {
-    setIsExporting(true);
-    try {
-      await exportTransactions('transactions.json');
+      console.error('Error exporting transactions:', error);
+      toast({
+        title: "Export Failed",
+        description: `Failed to export data: ${(error as Error).message || 'Unknown error'}`,
+        variant: "destructive",
+      });
     } finally {
       setIsExporting(false);
     }
   };
-
-  const handleExportCSV = async () => {
-    setIsExporting(true);
+  
+  // Function to handle transaction data import
+  const handleImportTransactions = async () => {
     try {
-      await exportTransactionsToCSV('transactions.csv');
+      setIsImporting(true);
+      console.log('Initiating transaction import...');
+      
+      // Enhanced logging for Android debugging
+      if (isAndroid) {
+        console.log('Android device detected, platform details:');
+        console.log('- User Agent:', navigator.userAgent);
+        console.log('- Is Capacitor App:', isCapacitor);
+      }
+      
+      // Request storage permissions first on Android
+      const hasPermissions = await checkAndRequestStoragePermissions();
+      console.log('Storage permissions check result:', hasPermissions);
+      
+      if (!hasPermissions) {
+        toast({
+          title: "Permission Denied",
+          description: "Storage permissions are required to import data.",
+          variant: "destructive",
+        });
+        setIsImporting(false);
+        return;
+      }
+      
+      // Use our improved file picking function
+      console.log('Calling pickFile function...');
+      const file = await pickFile(['text/csv']);
+      console.log('pickFile function returned:', file ? `File: ${file.name}` : 'null');
+      
+      if (!file) {
+        console.log('No file selected, cancelling import');
+        setIsImporting(false);
+        return;
+      }
+      
+      console.log(`Selected file for import: ${file.name}, size: ${file.size} bytes`);
+      
+      try {
+        // Import transactions from the selected CSV file
+        await importTransactionsFromCSV(file);
+        
+        // Notify the parent component that data has changed
+        onDataChanged();
+        
+        toast({
+          title: "Import Complete",
+          description: "Your transaction data has been imported successfully.",
+        });
+      } catch (error) {
+        console.error('Error importing transactions:', error);
+        toast({
+          title: "Import Failed",
+          description: `Failed to import data: ${(error as Error).message || 'Unknown error'}`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error setting up file input:', error);
+      toast({
+        title: "Import Failed",
+        description: `Failed to set up file picker: ${(error as Error).message || 'Unknown error'}`,
+        variant: "destructive",
+      });
     } finally {
-      setIsExporting(false);
+      setIsImporting(false);
     }
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Import & Export Data</CardTitle>
+        <CardTitle>Data Management</CardTitle>
         <CardDescription>
-          Transfer your transaction data to and from the app
+          Import and export your transaction data
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium flex items-center">
-            <Upload className="mr-2 h-5 w-5" />
-            Import Data
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Import transaction data from JSON or CSV files. This will add the imported transactions to your existing data.
-          </p>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Button 
+            variant="default" 
+            onClick={handleExportTransactions} 
+            disabled={isExporting}
+            className="flex-1"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {isExporting ? "Exporting..." : "Export Transaction Data"}
+          </Button>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <Label htmlFor="import-json" className="flex items-center">
-                <FileJson className="mr-2 h-4 w-4" />
-                Import from JSON
-              </Label>
-              <div className="flex">
-                <input
-                  id="import-json"
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={handleImportJSON}
-                />
-                <Button
-                  variant="outline"
-                  disabled={isImporting}
-                  onClick={() => document.getElementById('import-json')?.click()}
-                  className="w-full"
-                >
-                  {isImporting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      <FileUp className="mr-2 h-4 w-4" />
-                      Select JSON File
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <Label htmlFor="import-csv" className="flex items-center">
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Import from CSV
-              </Label>
-              <div className="flex">
-                <input
-                  id="import-csv"
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleImportCSV}
-                />
-                <Button
-                  variant="outline"
-                  disabled={isImporting}
-                  onClick={() => document.getElementById('import-csv')?.click()}
-                  className="w-full"
-                >
-                  {isImporting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      <FileUp className="mr-2 h-4 w-4" />
-                      Select CSV File
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <Separator />
-        
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium flex items-center">
-            <Download className="mr-2 h-5 w-5" />
-            Export Data
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Export your transaction data for backup or to use in other applications.
-          </p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button
-              onClick={handleExportJSON}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <FileDown className="mr-2 h-4 w-4" />
-                  Export as JSON
-                </>
-              )}
-            </Button>
-            
-            <Button
-              onClick={handleExportCSV}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <FileDown className="mr-2 h-4 w-4" />
-                  Export as CSV
-                </>
-              )}
-            </Button>
-          </div>
+          <Button 
+            variant="outline" 
+            onClick={handleImportTransactions} 
+            disabled={isImporting}
+            className="flex-1"
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {isImporting ? "Importing..." : "Import Transaction Data"}
+          </Button>
         </div>
       </CardContent>
     </Card>

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,20 +12,18 @@ import {
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, 
-  AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { LogOut, User } from 'lucide-react';
-
 import { ExpenseCategory, IncomeCategory, TimeFrame, UserPreferences } from '@/types';
-import { getPreferences, savePreferences } from '@/lib/db';
+import { getPreferences, savePreferences, getUserCategories } from '@/lib/db';
 import { toast } from '@/hooks/use-toast';
-import { clearCredentials, isAuthorized } from '@/lib/gmail-auth';
+import { ensureDefaultParserRules } from '@/lib/apply-parser-rules';
 import DataImportExport from '@/components/DataImportExport';
 import ParserRulesManager from '@/components/ParserRulesManager';
+import ParserRulesImportExport from '@/components/ParserRulesImportExport';
 import MerchantNotesManager from '@/components/MerchantNotesManager';
-import { ensureDefaultParserRules } from '@/lib/apply-parser-rules';
-import { addParserRule, ExpenseParserRuleInput } from '@/lib/parser-rules';
+import MerchantNotesImportExport from '@/components/MerchantNotesImportExport';
+import CategoryManager from '@/components/CategoryManager';
+import { addParserRule } from '@/lib/parser-rules';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const formSchema = z.object({
   defaultCurrency: z.string(),
@@ -41,15 +38,15 @@ type SettingsFormValues = z.infer<typeof formSchema>;
 const Settings = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
+  const [customExpenseCategories, setCustomExpenseCategories] = useState<string[]>([]);
+  const [customIncomeCategories, setCustomIncomeCategories] = useState<string[]>([]);
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       defaultCurrency: 'INR',
-      defaultExpenseCategory: '',
-      defaultIncomeCategory: 'salary',
+      defaultExpenseCategory: 'other',
+      defaultIncomeCategory: 'other',
       defaultTimeFrame: 'month',
       categorizeAutomatically: true,
     },
@@ -63,27 +60,11 @@ const Settings = () => {
           defaultCurrency: preferences.defaultCurrency,
           defaultExpenseCategory: preferences.defaultExpenseCategory,
           defaultIncomeCategory: preferences.defaultIncomeCategory,
-          defaultTimeFrame: preferences.defaultTimeFrame,
-          categorizeAutomatically: preferences.categorizeAutomatically,
+          defaultTimeFrame: preferences.defaultTimeFrame || 'month',
+          categorizeAutomatically: preferences.categorizeAutomatically || true,
         });
         
         await ensureDefaultParserRules();
-        
-        // Check Gmail authentication status
-        const authorized = await isAuthorized();
-        setIsAuthenticated(authorized);
-        
-        // If authenticated, try to get user info
-        if (authorized && window.gapi && window.gapi.client && window.gapi.client.gmail) {
-          try {
-            const response = await window.gapi.client.gmail.users.getProfile({
-              userId: 'me'
-            });
-            setLoggedInUser(response.result.emailAddress);
-          } catch (error) {
-            console.error('Error getting Gmail profile:', error);
-          }
-        }
       } catch (error) {
         console.error('Error loading preferences:', error);
         toast({
@@ -97,12 +78,32 @@ const Settings = () => {
     loadPreferences();
   }, [form]);
 
+  useEffect(() => {
+    const loadCustomCategories = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        
+        if (userCategories.expenseCategories) {
+          setCustomExpenseCategories(userCategories.expenseCategories);
+        }
+        
+        if (userCategories.incomeCategories) {
+          setCustomIncomeCategories(userCategories.incomeCategories);
+        }
+      } catch (error) {
+        console.error('Error loading custom categories:', error);
+      }
+    };
+    
+    loadCustomCategories();
+  }, []);
+
   const onSubmit = async (values: SettingsFormValues) => {
     setIsLoading(true);
     try {
       const existingPreferences = await getPreferences();
       
-      const updatedPreferences: UserPreferences = {
+      const updatedPreferences = {
         ...existingPreferences,
         defaultCurrency: values.defaultCurrency,
         defaultExpenseCategory: values.defaultExpenseCategory as ExpenseCategory,
@@ -129,25 +130,6 @@ const Settings = () => {
     }
   };
 
-  const handleClearGmailAuth = async () => {
-    try {
-      await clearCredentials();
-      setIsAuthenticated(false);
-      setLoggedInUser(null);
-      toast({
-        title: 'Gmail Logout Successful',
-        description: 'You have been logged out of Gmail. You can reconnect with a different account.',
-      });
-    } catch (error) {
-      console.error('Error clearing Gmail auth:', error);
-      toast({
-        title: 'Error',
-        description: 'Could not log out from Gmail.',
-        variant: 'destructive',
-      });
-    }
-  };
-
   const handleDataChanged = () => {
     toast({
       title: 'Data Updated',
@@ -157,7 +139,7 @@ const Settings = () => {
 
   const addHdfcUpiRule = async () => {
     try {
-      const ruleInput: ExpenseParserRuleInput = {
+      await addParserRule({
         name: "HDFC UPI Transaction",
         enabled: true,
         senderMatch: "alerts@hdfcbank.net",
@@ -170,9 +152,8 @@ const Settings = () => {
         dateRegex: "(\\d{2}-\\d{2}-\\d{2})",
         priority: 10,
         additionalSearchQuery: "",
-      };
-      
-      await addParserRule(ruleInput);
+        extractMerchantFromSubject: false,
+      });
       
       toast({
         title: 'HDFC UPI Parser Rule Added',
@@ -190,283 +171,215 @@ const Settings = () => {
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your preferences and account settings
+      <div className="space-y-6 max-w-full">
+        <div className="space-y-0.5">
+          <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
+          <p className="text-muted-foreground">
+            Manage your account settings and preferences.
           </p>
-        </header>
-        
-        <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full md:w-auto" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="gmail">Gmail</TabsTrigger>
-            <TabsTrigger value="parsing">Parsing</TabsTrigger>
-            <TabsTrigger value="notes">Notes</TabsTrigger>
-            <TabsTrigger value="data">Data</TabsTrigger>
+        </div>
+
+        <Tabs defaultValue="general" className="w-full">
+          <TabsList className="mb-4 flex flex-wrap w-full">
+            <TabsTrigger value="general" className="mb-1">General</TabsTrigger>
+            <TabsTrigger value="categories" className="mb-1">Categories</TabsTrigger>
+            <TabsTrigger value="data" className="mb-1">Data Management</TabsTrigger>
+            <TabsTrigger value="parser" className="mb-1">Parser Rules</TabsTrigger>
+            <TabsTrigger value="notes" className="mb-1">Merchant Notes</TabsTrigger>
           </TabsList>
-          
-          <TabsContent value="general" className="space-y-6">
-            <Card>
+
+          <TabsContent value="general">
+            <Card className="w-full">
               <CardHeader>
                 <CardTitle>General Settings</CardTitle>
                 <CardDescription>
                   Configure your default preferences for the application
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <FormField
-                      control={form.control}
-                      name="defaultCurrency"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Default Currency</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select currency" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="INR">INR - Indian Rupee</SelectItem>
-                              <SelectItem value="USD">USD - US Dollar</SelectItem>
-                              <SelectItem value="EUR">EUR - Euro</SelectItem>
-                              <SelectItem value="GBP">GBP - British Pound</SelectItem>
-                              <SelectItem value="JPY">JPY - Japanese Yen</SelectItem>
-                              <SelectItem value="CAD">CAD - Canadian Dollar</SelectItem>
-                              <SelectItem value="AUD">AUD - Australian Dollar</SelectItem>
-                              <SelectItem value="CNY">CNY - Chinese Yuan</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormDescription>
-                            The default currency used for new transactions
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="defaultExpenseCategory"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Default Expense Category</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value || "none"}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select category" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">No Default Category</SelectItem>
-                              <SelectItem value="groceries">Groceries</SelectItem>
-                              <SelectItem value="utilities">Utilities</SelectItem>
-                              <SelectItem value="entertainment">Entertainment</SelectItem>
-                              <SelectItem value="transportation">Transportation</SelectItem>
-                              <SelectItem value="dining">Dining</SelectItem>
-                              <SelectItem value="shopping">Shopping</SelectItem>
-                              <SelectItem value="health">Health</SelectItem>
-                              <SelectItem value="travel">Travel</SelectItem>
-                              <SelectItem value="housing">Housing</SelectItem>
-                              <SelectItem value="education">Education</SelectItem>
-                              <SelectItem value="subscriptions">Subscriptions</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormDescription>
-                            The default category for new expenses (can be left blank)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="defaultIncomeCategory"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Default Income Category</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select category" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="salary">Salary</SelectItem>
-                              <SelectItem value="freelance">Freelance</SelectItem>
-                              <SelectItem value="investment">Investment</SelectItem>
-                              <SelectItem value="gift">Gift</SelectItem>
-                              <SelectItem value="refund">Refund</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormDescription>
-                            The default category for new income
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="defaultTimeFrame"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Default Time Frame</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select time frame" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="week">Week</SelectItem>
-                              <SelectItem value="month">Month</SelectItem>
-                              <SelectItem value="quarter">Quarter</SelectItem>
-                              <SelectItem value="year">Year</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormDescription>
-                            The default time period for reports and views
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="categorizeAutomatically"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Automatic Categorization</FormLabel>
+              <CardContent className="max-w-full overflow-hidden">
+                <ScrollArea className="w-full">
+                  <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                      <FormField
+                        control={form.control}
+                        name="defaultCurrency"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Default Currency</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select currency" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="INR">INR - Indian Rupee</SelectItem>
+                                <SelectItem value="USD">USD - US Dollar</SelectItem>
+                                <SelectItem value="EUR">EUR - Euro</SelectItem>
+                                <SelectItem value="GBP">GBP - British Pound</SelectItem>
+                                <SelectItem value="JPY">JPY - Japanese Yen</SelectItem>
+                                <SelectItem value="CAD">CAD - Canadian Dollar</SelectItem>
+                                <SelectItem value="AUD">AUD - Australian Dollar</SelectItem>
+                                <SelectItem value="CNY">CNY - Chinese Yuan</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <FormDescription>
-                              Automatically categorize transactions based on merchant name
+                              The default currency used for new transactions
                             </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <Button type="submit" disabled={isLoading}>
-                      {isLoading ? 'Saving...' : 'Save Settings'}
-                    </Button>
-                  </form>
-                </Form>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="defaultExpenseCategory"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Default Expense Category</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value || "none"}>
+                              <FormControl>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">No Default Category</SelectItem>
+                                <SelectItem value="other">Other</SelectItem>
+                                
+                                {customExpenseCategories.map(category => (
+                                  <SelectItem key={category} value={category}>
+                                    {category.charAt(0).toUpperCase() + category.slice(1).replace(/-/g, ' ')}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              The default category for new expenses (can be left blank)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="defaultIncomeCategory"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Default Income Category</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="other">Other</SelectItem>
+                                
+                                {customIncomeCategories.map(category => (
+                                  <SelectItem key={category} value={category}>
+                                    {category.charAt(0).toUpperCase() + category.slice(1).replace(/-/g, ' ')}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              The default category for new income
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="defaultTimeFrame"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Default Time Frame</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select time frame" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="week">Week</SelectItem>
+                                <SelectItem value="month">Month</SelectItem>
+                                <SelectItem value="quarter">Quarter</SelectItem>
+                                <SelectItem value="year">Year</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              The default time period for reports and views
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="categorizeAutomatically"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Automatic Categorization</FormLabel>
+                              <FormDescription>
+                                Automatically categorize transactions based on merchant name
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="submit" disabled={isLoading}>
+                          {isLoading ? 'Saving...' : 'Save Settings'}
+                        </Button>
+                        
+                        <Button variant="secondary" onClick={addHdfcUpiRule} type="button">
+                          Add HDFC UPI Parser Rule
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </ScrollArea>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="gmail" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Gmail Authentication</CardTitle>
-                <CardDescription>
-                  Manage your Gmail connection for expense scanning
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="border rounded-md p-4 flex items-center justify-between bg-muted/20">
-                  <div className="space-y-1 flex items-center gap-3">
-                    {isAuthenticated ? (
-                      <>
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-medium">Connected Account</h3>
-                          {loggedInUser ? (
-                            <p className="text-sm text-muted-foreground" id="gmail-auth-status">
-                              {loggedInUser}
-                            </p>
-                          ) : (
-                            <p className="text-sm text-muted-foreground" id="gmail-auth-status">
-                              You're currently logged in to Gmail
-                            </p>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                          <User className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-medium">Not Connected</h3>
-                          <p className="text-sm text-muted-foreground" id="gmail-auth-status">
-                            Connect to Gmail to scan expenses
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  
-                  <div>
-                    {isAuthenticated && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" className="gap-2">
-                            <LogOut className="h-4 w-4" />
-                            Logout
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Log out from Gmail?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will disconnect your Gmail account. You'll need to reconnect to scan for expenses again.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleClearGmailAuth}>
-                              Logout
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                  </div>
-                </div>
-                
-                <p className="text-sm text-muted-foreground">
-                  For Gmail integration, we use direct authentication with your Gmail account.
-                  This provides a simpler and more secure way to access your expense emails.
-                </p>
-                
-                <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                  <Button variant="secondary" onClick={addHdfcUpiRule}>
-                    Add HDFC UPI Parser Rule
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+          <TabsContent value="categories">
+            <div className="w-full">
+              <CategoryManager />
+            </div>
           </TabsContent>
 
-          <TabsContent value="parsing" className="space-y-6">
-            <ParserRulesManager />
+          <TabsContent value="data">
+            <div className="space-y-6">
+              <DataImportExport onDataChanged={handleDataChanged} />
+            </div>
           </TabsContent>
 
-          <TabsContent value="notes" className="space-y-6">
-            <MerchantNotesManager />
+          <TabsContent value="parser">
+            <div className="space-y-6">
+              <ParserRulesManager />
+              <ParserRulesImportExport onDataChanged={handleDataChanged} />
+            </div>
           </TabsContent>
 
-          <TabsContent value="data" className="space-y-6">
-            <DataImportExport onDataChanged={handleDataChanged} />
+          <TabsContent value="notes">
+            <div className="space-y-6">
+              <MerchantNotesManager />
+              <MerchantNotesImportExport onDataChanged={handleDataChanged} />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -9,26 +9,26 @@ export interface ExpenseParserRule {
   /** Whether the rule is currently active */
   enabled: boolean;
   
-  /** Text that must appear in the email sender address */
-  senderMatch: string;
+  /** Text that must appear in the email sender address (array supports multiple patterns) */
+  senderMatch: string | string[];
   
-  /** Text that must appear in the email subject (optional) */
-  subjectMatch: string;
+  /** Text that must appear in the email subject (optional, array supports multiple patterns) */
+  subjectMatch: string | string[];
   
-  /** Regular expression to extract the transaction amount (with capture group) */
-  amountRegex: string;
+  /** Regular expression to extract the transaction amount (with capture group, array supports multiple patterns) */
+  amountRegex: string | string[];
   
-  /** Regular expression to extract the merchant name (with capture group, optional) */
-  merchantCondition: string;
+  /** Regular expression to extract the merchant name (with capture group, optional, array supports multiple patterns) */
+  merchantCondition: string | string[];
   
   /** Bank or payment method to associate with transactions matching this rule */
   paymentBank: string;
   
-  /** Regular expression pattern - if matched, email is skipped entirely */
-  skipCondition: string;
+  /** Regular expression pattern - if matched, email is skipped entirely (array supports multiple patterns) */
+  skipCondition: string | string[];
   
-  /** Regular expression pattern - if matched, don't extract data but don't skip either */
-  noExtractCondition: string;
+  /** Regular expression pattern - if matched, don't extract data but don't skip either (array supports multiple patterns) */
+  noExtractCondition: string | string[];
   
   /** Regular expression to extract the transaction date (with capture group) */
   dateRegex: string;
@@ -56,4 +56,27 @@ export interface ExpenseParserRule {
   
   /** Count of successful parses */
   successCount?: number;
+  
+  /** Last modified timestamp - required for compatibility with ParserRule */
+  lastModified: string;
+}
+
+// Add Cordova types needed for file access
+declare global {
+  interface Window {
+    cordova?: {
+      plugins?: {
+        permissions?: {
+          checkPermission: (permission: string, successCallback: (status: {hasPermission: boolean}) => void, errorCallback: () => void) => void;
+          requestPermission: (permission: string, successCallback: (status: {hasPermission: boolean}) => void, errorCallback: () => void) => void;
+        };
+        filePicker?: {
+          pickDirectory: (successCallback: (path: string) => void, errorCallback: (error: any) => void) => void;
+        }
+      };
+      file?: {
+        writeFile: (path: string, fileName: string, data: string, options: {replace: boolean}, successCallback: () => void, errorCallback: (error: any) => void) => void;
+      };
+    };
+  }
 }

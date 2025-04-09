@@ -1,11 +1,11 @@
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
 import { Expense, ExpenseCategory } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -28,20 +28,10 @@ import { format } from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
+import { getUserCategories } from '@/lib/db';
 
-// Categories for the form
-const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-  { value: 'groceries', label: 'Groceries' },
-  { value: 'utilities', label: 'Utilities' },
-  { value: 'entertainment', label: 'Entertainment' },
-  { value: 'transportation', label: 'Transportation' },
-  { value: 'dining', label: 'Dining' },
-  { value: 'shopping', label: 'Shopping' },
-  { value: 'health', label: 'Health' },
-  { value: 'travel', label: 'Travel' },
-  { value: 'housing', label: 'Housing' },
-  { value: 'education', label: 'Education' },
-  { value: 'subscriptions', label: 'Subscriptions' },
+// Default categories for the form - Now only contains 'other'
+const DEFAULT_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: 'other', label: 'Other' }
 ];
 
@@ -73,6 +63,30 @@ interface ExpenseFormProps {
 }
 
 const ExpenseForm = ({ expense, onSubmit, onCancel }: ExpenseFormProps) => {
+  const [categories, setCategories] = useState<{ value: string; label: string }[]>(DEFAULT_CATEGORIES);
+
+  // Load custom categories
+  useEffect(() => {
+    const loadCustomCategories = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        
+        if (userCategories.expenseCategories && userCategories.expenseCategories.length > 0) {
+          const customCategories = userCategories.expenseCategories.map(cat => ({
+            value: cat,
+            label: cat.charAt(0).toUpperCase() + cat.slice(1).replace(/-/g, ' ')
+          }));
+          
+          setCategories([...DEFAULT_CATEGORIES, ...customCategories]);
+        }
+      } catch (error) {
+        console.error('Error loading custom categories:', error);
+      }
+    };
+    
+    loadCustomCategories();
+  }, []);
+
   // Initialize form with existing expense data or defaults
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -234,7 +248,7 @@ const ExpenseForm = ({ expense, onSubmit, onCancel }: ExpenseFormProps) => {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {CATEGORIES.map(category => (
+                    {categories.map(category => (
                       <SelectItem key={category.value} value={category.value}>
                         {category.label}
                       </SelectItem>

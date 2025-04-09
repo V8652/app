@@ -1,32 +1,34 @@
-
 import { useState, useEffect } from 'react';
-import Layout from '@/components/Layout';
+import SafeLayout from '@/components/SafeLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, ArrowUpRight, Mail, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
+import { Plus, ArrowUpRight, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Expense, Income, Transaction, DateRange } from '@/types';
+import { Expense, Income, DateRange } from '@/types';
 import { getExpenses, getExpensesByDateRange, getIncomes, getIncomesByDateRange, getFinancialSummary } from '@/lib/db';
 import ExpenseCard from '@/components/ExpenseCard';
 import IncomeCard from '@/components/IncomeCard';
 import ExpenseSummaryChart from '@/components/ExpenseSummaryChart';
 import ExpenseForm from '@/components/ExpenseForm';
 import IncomeForm from '@/components/IncomeForm';
-import GmailAuthView from '@/components/GmailAuthView';
 import TransactionViews from '@/components/TransactionViews';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { addExpense, addIncome } from '@/lib/db';
 import { toast } from '@/hooks/use-toast';
-import { format, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 import DateRangeSelector from '@/components/DateRangeSelector';
-import GmailDropdown from '@/components/GmailDropdown';
+import ExpenseEditForm from '@/components/ExpenseEditForm';
+import IncomeEditForm from '@/components/IncomeEditForm';
+import NetBalanceDisplay from '@/components/NetBalanceDisplay';
 
 const Index = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
+  const [isEditExpenseOpen, setIsEditExpenseOpen] = useState(false);
+  const [isEditIncomeOpen, setIsEditIncomeOpen] = useState(false);
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'all' | 'custom'>('month');
   const [isLoading, setIsLoading] = useState(true);
   const [summary, setSummary] = useState({
@@ -40,8 +42,9 @@ const Index = () => {
     to: endOfMonth(new Date())
   });
   const [showDateRangeSelector, setShowDateRangeSelector] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [selectedIncome, setSelectedIncome] = useState<Income | null>(null);
 
-  // Load expenses on mount
   useEffect(() => {
     loadData();
   }, [timeframe, dateRange]);
@@ -74,14 +77,12 @@ const Index = () => {
         incomesResult = await getIncomes();
       }
       
-      // Get financial summary
       const financialSummary = timeframe !== 'all' 
         ? await getFinancialSummary(startDate!, endDate!) 
         : await getFinancialSummary();
       
       setSummary(financialSummary);
       
-      // Sort by date (most recent first)
       expensesResult.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       incomesResult.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
@@ -137,12 +138,33 @@ const Index = () => {
     }
   };
 
-  const handleGmailScanComplete = (newExpenses: Expense[]) => {
-    // Reload expenses after scan
-    loadData();
+  const handleExpenseClick = (expense: Expense) => {
+    setSelectedExpense(expense);
+    setIsEditExpenseOpen(true);
   };
 
-  // Format currency
+  const handleIncomeClick = (income: Income) => {
+    setSelectedIncome(income);
+    setIsEditIncomeOpen(true);
+  };
+
+  const handleExpenseEditSave = () => {
+    loadData();
+    setIsEditExpenseOpen(false);
+    setSelectedExpense(null);
+  };
+
+  const handleIncomeEditSave = () => {
+    loadData();
+    setIsEditIncomeOpen(false);
+    setSelectedIncome(null);
+  };
+
+  const handleDateRangeChange = (range: DateRange) => {
+    setDateRange(range);
+    setTimeframe('custom');
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -151,89 +173,87 @@ const Index = () => {
     }).format(amount);
   };
 
-  const handleDateRangeChange = (range: DateRange) => {
-    setDateRange(range);
-    setTimeframe('custom');
-  };
-
   return (
-    <Layout>
+    <SafeLayout>
       <div className="max-w-7xl mx-auto">
-        <header className="mb-6">
+        <header className="mb-8">
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-                <p className="text-muted-foreground mt-1">
-                  Track and analyze your expenses and income
-                </p>
-              </div>
-              <GmailDropdown 
-                dateRange={dateRange}
-                onDateRangeChange={handleDateRangeChange}
-                onScanComplete={handleGmailScanComplete}
-              />
-            </div>
-            
-            {/* Date range filters */}
-            <div className="flex items-center space-x-2 mt-4 mb-4 flex-wrap gap-y-2">
-              {showDateRangeSelector ? (
-                <div className="flex items-center">
-                  <DateRangeSelector 
-                    value={dateRange}
-                    onChange={handleDateRangeChange}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowDateRangeSelector(false)}
-                    className="ml-2"
-                  >
-                    Hide
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Button
-                    variant={timeframe === 'week' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    onClick={() => setTimeframe('week')}
-                  >
-                    Week
-                  </Button>
-                  <Button
-                    variant={timeframe === 'month' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    onClick={() => setTimeframe('month')}
-                  >
-                    Month
-                  </Button>
-                  <Button
-                    variant={timeframe === 'all' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    onClick={() => setTimeframe('all')}
-                  >
-                    All
-                  </Button>
-                  <Button
-                    variant={timeframe === 'custom' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    onClick={() => setShowDateRangeSelector(true)}
-                  >
-                    Custom
-                  </Button>
-                </>
-              )}
-            </div>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <p className="text-muted-foreground mt-1">
+              Track and analyze your expenses and income
+            </p>
           </motion.div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {/* Summary Cards */}
+        <div className="mb-6">
+          <NetBalanceDisplay 
+            totalIncome={summary.totalIncome}
+            totalExpenses={summary.totalExpenses}
+            timeframe={timeframe === 'week' 
+              ? 'This week' 
+              : timeframe === 'month' 
+              ? 'This month' 
+              : timeframe === 'custom'
+              ? `${format(dateRange.from, 'dd MMM')} - ${format(dateRange.to, 'dd MMM')}`
+              : 'All time'}
+          />
+        </div>
+
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2 mb-6">
+          {showDateRangeSelector ? (
+            <div className="flex items-center">
+              <DateRangeSelector 
+                value={dateRange}
+                onChange={handleDateRangeChange}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDateRangeSelector(false)}
+                className="ml-2"
+              >
+                Hide
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button
+                variant={timeframe === 'week' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTimeframe('week')}
+              >
+                Week
+              </Button>
+              <Button
+                variant={timeframe === 'month' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTimeframe('month')}
+              >
+                Month
+              </Button>
+              <Button
+                variant={timeframe === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTimeframe('all')}
+              >
+                All
+              </Button>
+              <Button
+                variant={timeframe === 'custom' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowDateRangeSelector(true)}
+              >
+                Custom
+              </Button>
+            </>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -314,18 +334,16 @@ const Index = () => {
             </Card>
           </motion.div>
 
-          {/* Gmail Integration Card */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="col-span-2 hidden"
+            className="col-span-1"
           >
-            <GmailAuthView onScanComplete={handleGmailScanComplete} />
+            {/* Remove the duplicate NetBalanceDisplay from here */}
           </motion.div>
         </div>
 
-        {/* Transactions and Chart Section */}
         <div className="space-y-6">
           <Tabs defaultValue="transactions" className="w-full">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -361,7 +379,6 @@ const Index = () => {
               {transactionTab === 'expenses' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {isLoading ? (
-                    // Loading placeholders
                     Array(6).fill(0).map((_, i) => (
                       <div key={i} className="h-32 bg-muted/50 rounded-lg animate-pulse"></div>
                     ))
@@ -372,6 +389,7 @@ const Index = () => {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.05 * (index % 6) }}
+                        onClick={() => handleExpenseClick(expense)}
                       >
                         <ExpenseCard expense={expense} onUpdate={loadData} />
                       </motion.div>
@@ -379,7 +397,7 @@ const Index = () => {
                   ) : (
                     <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
                       <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                        <Mail className="h-8 w-8 text-muted-foreground" />
+                        <Wallet className="h-8 w-8 text-muted-foreground" />
                       </div>
                       <h3 className="text-lg font-medium">No expenses yet</h3>
                       <p className="text-muted-foreground mt-1 mb-4">
@@ -401,7 +419,6 @@ const Index = () => {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {isLoading ? (
-                    // Loading placeholders
                     Array(6).fill(0).map((_, i) => (
                       <div key={i} className="h-32 bg-muted/50 rounded-lg animate-pulse"></div>
                     ))
@@ -412,8 +429,13 @@ const Index = () => {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.05 * (index % 6) }}
+                        onClick={() => handleIncomeClick(income)}
                       >
-                        <IncomeCard income={income} onUpdate={loadData} />
+                        <IncomeCard 
+                          income={income} 
+                          onEdit={handleIncomeClick} 
+                          onDelete={loadData} 
+                        />
                       </motion.div>
                     ))
                   ) : (
@@ -443,10 +465,7 @@ const Index = () => {
             
             <TabsContent value="analytics" className="mt-0">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pie Chart */}
                 <ExpenseSummaryChart expenses={expenses} chartType="pie" />
-                
-                {/* Bar Chart */}
                 <ExpenseSummaryChart expenses={expenses} chartType="bar" />
               </div>
             </TabsContent>
@@ -458,7 +477,6 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Add Expense Dialog */}
       <Dialog open={isAddExpenseOpen} onOpenChange={setIsAddExpenseOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -475,7 +493,6 @@ const Index = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Add Income Dialog */}
       <Dialog open={isAddIncomeOpen} onOpenChange={setIsAddIncomeOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -491,7 +508,25 @@ const Index = () => {
           />
         </DialogContent>
       </Dialog>
-    </Layout>
+
+      {selectedExpense && (
+        <ExpenseEditForm
+          expense={selectedExpense}
+          isOpen={isEditExpenseOpen}
+          onClose={() => setIsEditExpenseOpen(false)}
+          onSave={handleExpenseEditSave}
+        />
+      )}
+
+      {selectedIncome && (
+        <IncomeEditForm
+          income={selectedIncome}
+          isOpen={isEditIncomeOpen}
+          onClose={() => setIsEditIncomeOpen(false)}
+          onSave={handleIncomeEditSave}
+        />
+      )}
+    </SafeLayout>
   );
 };
 

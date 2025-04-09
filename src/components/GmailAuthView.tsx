@@ -23,9 +23,10 @@ import { useIsMobile } from '@/hooks/use-mobile';
 
 interface GmailAuthViewProps {
   onScanComplete: (expenses: Expense[]) => void;
+  onScanError?: (errorMessage: string) => void;
 }
 
-const GmailAuthView = ({ onScanComplete }: GmailAuthViewProps) => {
+const GmailAuthView = ({ onScanComplete, onScanError }: GmailAuthViewProps) => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -386,10 +387,11 @@ const GmailAuthView = ({ onScanComplete }: GmailAuthViewProps) => {
     setProgress(0);
     
     try {
+      // Convert date objects to UNIX timestamps
       const fromDateUnix = dateRange.from ? Math.floor(dateRange.from.getTime() / 1000) : undefined;
       const toDateUnix = dateRange.to ? Math.floor(dateRange.to.getTime() / 1000) : undefined;
       
-      console.log(`Scanning emails from ${dateRange.from} to ${dateRange.to}`);
+      console.log(`Scanning emails from ${dateRange.from.toISOString()} to ${dateRange.to.toISOString()}`);
       console.log(`Unix timestamps: from=${fromDateUnix}, to=${toDateUnix}`);
       
       if (!window.gapi?.client?.gmail) {
@@ -465,10 +467,16 @@ const GmailAuthView = ({ onScanComplete }: GmailAuthViewProps) => {
       
       if (!emails || emails.length === 0) {
         setIsScanning(false);
+        const errorMessage = `Could not find any emails matching your parser rules in the selected date range (${format(dateRange.from, 'MMM d, yyyy')} - ${format(dateRange.to, 'MMM d, yyyy')}). Try adjusting your date range or parser rules.`;
+        
         toast({
           title: 'No emails found',
-          description: `Could not find any emails matching your parser rules in the selected date range (${format(dateRange.from, 'MMM d, yyyy')} - ${format(dateRange.to, 'MMM d, yyyy')}). Try adjusting your date range or parser rules.`,
+          description: errorMessage,
         });
+        
+        if (onScanError) {
+          onScanError(errorMessage);
+        }
         return;
       }
       
@@ -516,11 +524,17 @@ const GmailAuthView = ({ onScanComplete }: GmailAuthViewProps) => {
         });
         onScanComplete(validExpenses);
       } else {
+        const errorMessage = `Scanned ${totalEmails} emails but could not find any valid expenses. ${errorCount > 0 ? `(${errorCount} emails had errors)` : ''} Check your parser rules in Settings > Parsing.`;
+        
         toast({
           title: 'No Expenses Found',
-          description: `Scanned ${totalEmails} emails but could not find any valid expenses. ${errorCount > 0 ? `(${errorCount} emails had errors)` : ''} Check your parser rules in Settings > Parsing.`,
+          description: errorMessage,
           variant: 'default',
         });
+        
+        if (onScanError) {
+          onScanError(errorMessage);
+        }
       }
     } catch (error) {
       console.error('Scan error:', error);
@@ -554,6 +568,10 @@ const GmailAuthView = ({ onScanComplete }: GmailAuthViewProps) => {
         description: errorMessage,
         variant: 'destructive',
       });
+      
+      if (onScanError) {
+        onScanError(errorMessage);
+      }
     }
   };
 

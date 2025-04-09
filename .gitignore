@@ -11,10 +11,6 @@ node_modules
 dist
 dist-ssr
 *.local
-**/tempobook/dynamic/
-**/tempobook/storyboards/
-**/tempobook/dynamic/
-**/tempobook/storyboards/
 
 # Editor directories and files
 .vscode/*

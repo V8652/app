@@ -2,54 +2,23 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PlusCircle, Edit, Trash2, Save, RefreshCw, Check } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Save, RefreshCw, Check, CircleDot } from 'lucide-react';
 import { ExpenseCategory } from '@/types';
 import { toast } from '@/hooks/use-toast';
-import { 
-  Form, 
-  FormControl, 
-  FormDescription, 
-  FormField, 
-  FormItem, 
-  FormLabel, 
-  FormMessage 
-} from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { getUniqueMerchants, applyMerchantNotesToTransactions } from '@/lib/db';
-import { MerchantNote, getMerchantNotes, saveMerchantNote, deleteMerchantNote } from '@/lib/merchant-notes';
+import { getUniqueMerchants, applyMerchantNotesToTransactions, getUserCategories } from '@/lib/db';
+import { MerchantNote, getMerchantNotes, updateMerchantNote, deleteMerchantNote, addMerchantNote, MerchantNoteInput } from '@/lib/merchant-notes';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import MerchantNotesImportExport from './MerchantNotesImportExport';
 
@@ -57,9 +26,8 @@ import MerchantNotesImportExport from './MerchantNotesImportExport';
 const formSchema = z.object({
   merchantName: z.string().min(1, 'Merchant name is required'),
   category: z.string().optional(),
-  note: z.string().optional(),
+  notes: z.string().optional()
 });
-
 type FormValues = z.infer<typeof formSchema>;
 
 const MerchantNotesManager = () => {
@@ -74,44 +42,61 @@ const MerchantNotesManager = () => {
   const [applyToTransactions, setApplyToTransactions] = useState(false);
   const [selectedMerchant, setSelectedMerchant] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("manage");
-
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
+  
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       merchantName: '',
       category: 'none',
-      note: '',
-    },
+      notes: ''
+    }
   });
-
+  
   useEffect(() => {
     loadData();
   }, []);
-
+  
   useEffect(() => {
     if (currentNote) {
       form.reset({
         merchantName: currentNote.merchantName,
         category: currentNote.category || 'none',
-        note: currentNote.note || '',
+        notes: currentNote.notes || ''
       });
     }
   }, [currentNote, form]);
-
+  
   useEffect(() => {
     if (selectedMerchant) {
       form.setValue('merchantName', selectedMerchant);
     }
   }, [selectedMerchant, form]);
-
+  
+  useEffect(() => {
+    // Load custom categories
+    const loadCustomCategories = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        const expenseCategories = userCategories.expenseCategories || [];
+        setCustomCategories(expenseCategories);
+        
+        if (userCategories.categoryColors) {
+          setCategoryColors(userCategories.categoryColors);
+        }
+      } catch (error) {
+        console.error('Error loading custom categories:', error);
+      }
+    };
+    
+    loadCustomCategories();
+  }, []);
+  
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [loadedNotes, loadedMerchants] = await Promise.all([
-        getMerchantNotes(),
-        getUniqueMerchants(),
-      ]);
-      
+      const [loadedNotes, loadedMerchants] = await Promise.all([getMerchantNotes(), getUniqueMerchants()]);
       setNotes(loadedNotes.sort((a, b) => a.merchantName.localeCompare(b.merchantName)));
       setMerchants(loadedMerchants);
     } catch (error) {
@@ -119,13 +104,13 @@ const MerchantNotesManager = () => {
       toast({
         title: 'Error',
         description: 'Failed to load merchant data',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     } finally {
       setIsLoading(false);
     }
   };
-
+  
   const refreshMerchants = async () => {
     setIsRefreshing(true);
     try {
@@ -133,120 +118,111 @@ const MerchantNotesManager = () => {
       setMerchants(merchants);
       toast({
         title: 'Success',
-        description: `Found ${merchants.length} unique merchants`,
+        description: `Found ${merchants.length} unique merchants`
       });
     } catch (error) {
       console.error('Failed to refresh merchants:', error);
       toast({
         title: 'Error',
         description: 'Failed to refresh merchants',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     } finally {
       setIsRefreshing(false);
     }
   };
-
+  
   const handleAddNote = () => {
     setCurrentNote(null);
     form.reset({
       merchantName: selectedMerchant || '',
       category: 'none',
-      note: '',
+      notes: ''
     });
     setApplyToTransactions(true);
     setIsDialogOpen(true);
   };
-
+  
   const handleEditNote = (note: MerchantNote) => {
     setCurrentNote(note);
     setApplyToTransactions(false);
     setIsDialogOpen(true);
   };
-
+  
   const handleDeleteNote = (note: MerchantNote) => {
     setNoteToDelete(note);
     setIsDeleteDialogOpen(true);
   };
-
+  
   const confirmDeleteNote = async () => {
     if (!noteToDelete) return;
-    
     try {
       await deleteMerchantNote(noteToDelete.id);
       setNotes(notes.filter(n => n.id !== noteToDelete.id));
       toast({
         title: 'Success',
-        description: 'Merchant note deleted successfully',
+        description: 'Merchant note deleted successfully'
       });
     } catch (error) {
       console.error('Failed to delete merchant note:', error);
       toast({
         title: 'Error',
         description: 'Failed to delete merchant note',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     } finally {
       setIsDeleteDialogOpen(false);
       setNoteToDelete(null);
     }
   };
-
+  
   const onSubmit = async (values: FormValues) => {
     try {
       const category = values.category === 'none' ? undefined : values.category as ExpenseCategory;
-      
-      const noteData = {
+      const noteData: MerchantNoteInput = {
         merchantName: values.merchantName,
         category: category,
-        note: values.note && values.note.trim() !== '' ? values.note : undefined,
+        notes: values.notes && values.notes.trim() !== '' ? values.notes : undefined
       };
-      
-      const savedNote = await saveMerchantNote(noteData);
-      
-      if (applyToTransactions && (noteData.category || noteData.note)) {
-        const updatedCount = await applyMerchantNotesToTransactions(
-          noteData.merchantName,
-          noteData.category || "",
-          noteData.note || ""
-        );
-        
+      let savedNote: MerchantNote;
+      if (currentNote) {
+        savedNote = await updateMerchantNote({
+          ...currentNote,
+          category: noteData.category || '',
+          notes: noteData.notes || ''
+        });
+      } else {
+        savedNote = await addMerchantNote(noteData);
+      }
+      if (applyToTransactions && (noteData.category || noteData.notes)) {
+        const updatedCount = await applyMerchantNotesToTransactions(noteData.merchantName, noteData.category || "", noteData.notes || "");
         if (updatedCount > 0) {
           toast({
             title: 'Success',
-            description: `Updated ${updatedCount} transactions with this merchant`,
+            description: `Updated ${updatedCount} transactions with this merchant`
           });
         }
       }
-      
       if (currentNote) {
-        setNotes(
-          notes.map(n => n.id === savedNote.id ? savedNote : n)
-            .sort((a, b) => a.merchantName.localeCompare(b.merchantName))
-        );
+        setNotes(notes.map(n => n.id === savedNote.id ? savedNote : n).sort((a, b) => a.merchantName.localeCompare(b.merchantName)));
       } else {
-        setNotes(
-          [...notes, savedNote]
-            .sort((a, b) => a.merchantName.localeCompare(b.merchantName))
-        );
+        setNotes([...notes, savedNote].sort((a, b) => a.merchantName.localeCompare(b.merchantName)));
       }
-      
       toast({
         title: 'Success',
-        description: 'Merchant note saved successfully',
+        description: 'Merchant note saved successfully'
       });
-      
       setIsDialogOpen(false);
     } catch (error) {
       console.error('Failed to save merchant note:', error);
       toast({
         title: 'Error',
         description: 'Failed to save merchant note',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     }
   };
-
+  
   const handleSelectMerchant = (merchant: string) => {
     setSelectedMerchant(merchant);
     const existingNote = notes.find(n => n.merchantName === merchant);
@@ -255,6 +231,25 @@ const MerchantNotesManager = () => {
     } else {
       handleAddNote();
     }
+  };
+  
+  const getCategoryColor = (category: string) => {
+    return categoryColors[category] || '#8E9196'; // Default gray if no color is set
+  };
+  
+  const getCategoryBadge = (category: string | undefined) => {
+    if (!category) return null;
+    
+    const color = getCategoryColor(category);
+    return (
+      <Badge 
+        variant="secondary" 
+        className="text-white" 
+        style={{ backgroundColor: color }}
+      >
+        {category}
+      </Badge>
+    );
   };
 
   return (
@@ -267,11 +262,6 @@ const MerchantNotesManager = () => {
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="manage">Manage Notes</TabsTrigger>
-            <TabsTrigger value="import-export">Import & Export</TabsTrigger>
-          </TabsList>
-          
           <TabsContent value="manage" className="space-y-6">
             <div className="mb-4 space-y-4">
               <div className="flex flex-col sm:flex-row gap-2 justify-between items-start sm:items-center">
@@ -282,12 +272,7 @@ const MerchantNotesManager = () => {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={refreshMerchants}
-                    disabled={isRefreshing}
-                  >
+                  <Button variant="outline" size="sm" onClick={refreshMerchants} disabled={isRefreshing}>
                     <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
                     Refresh Merchants
                   </Button>
@@ -306,10 +291,10 @@ const MerchantNotesManager = () => {
                       {merchants.map(merchant => {
                         const hasNote = notes.some(n => n.merchantName === merchant);
                         return (
-                          <Badge
-                            key={merchant}
-                            variant={hasNote ? "default" : "outline"}
-                            className="cursor-pointer hover:bg-primary/20"
+                          <Badge 
+                            key={merchant} 
+                            variant={hasNote ? "default" : "outline"} 
+                            className="cursor-pointer hover:bg-primary/20" 
                             onClick={() => handleSelectMerchant(merchant)}
                           >
                             {merchant}
@@ -348,39 +333,30 @@ const MerchantNotesManager = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {notes.map((note) => (
+                    {notes.map(note => (
                       <TableRow key={note.id}>
                         <TableCell className="font-medium">{note.merchantName}</TableCell>
                         <TableCell>
-                          {note.category ? (
-                            <Badge variant="secondary">
-                              {note.category}
-                            </Badge>
-                          ) : (
+                          {note.category ? 
+                            getCategoryBadge(note.category) : 
                             <span className="text-muted-foreground text-sm">None</span>
-                          )}
+                          }
                         </TableCell>
                         <TableCell>
-                          {note.note ? (
-                            <span className="text-sm">{note.note.length > 30 ? note.note.substring(0, 30) + '...' : note.note}</span>
+                          {note.notes ? (
+                            <span className="text-sm">
+                              {note.notes.length > 30 ? note.notes.substring(0, 30) + '...' : note.notes}
+                            </span>
                           ) : (
                             <span className="text-muted-foreground text-sm">None</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end space-x-2">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => handleEditNote(note)}
-                            >
+                            <Button variant="outline" size="icon" onClick={() => handleEditNote(note)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => handleDeleteNote(note)}
-                            >
+                            <Button variant="outline" size="icon" onClick={() => handleDeleteNote(note)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -411,9 +387,9 @@ const MerchantNotesManager = () => {
             
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="merchantName"
+                <FormField 
+                  control={form.control} 
+                  name="merchantName" 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Merchant Name</FormLabel>
@@ -422,19 +398,16 @@ const MerchantNotesManager = () => {
                       </FormControl>
                       <FormMessage />
                     </FormItem>
-                  )}
+                  )} 
                 />
 
-                <FormField
-                  control={form.control}
-                  name="category"
+                <FormField 
+                  control={form.control} 
+                  name="category" 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Category</FormLabel>
-                      <Select 
-                        onValueChange={field.onChange} 
-                        defaultValue={field.value || "none"}
-                      >
+                      <Select onValueChange={field.onChange} defaultValue={field.value || "none"}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select category" />
@@ -442,63 +415,64 @@ const MerchantNotesManager = () => {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="none">No Category</SelectItem>
-                          <SelectItem value="groceries">Groceries</SelectItem>
-                          <SelectItem value="utilities">Utilities</SelectItem>
-                          <SelectItem value="entertainment">Entertainment</SelectItem>
-                          <SelectItem value="transportation">Transportation</SelectItem>
-                          <SelectItem value="dining">Dining</SelectItem>
-                          <SelectItem value="shopping">Shopping</SelectItem>
-                          <SelectItem value="health">Health</SelectItem>
-                          <SelectItem value="travel">Travel</SelectItem>
-                          <SelectItem value="housing">Housing</SelectItem>
-                          <SelectItem value="education">Education</SelectItem>
-                          <SelectItem value="subscriptions">Subscriptions</SelectItem>
                           <SelectItem value="other">Other</SelectItem>
+                          
+                          {/* Add custom categories */}
+                          {customCategories.map(category => (
+                            <SelectItem 
+                              key={category} 
+                              value={category}
+                              className="flex items-center"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div 
+                                  className="w-3 h-3 rounded-full" 
+                                  style={{ backgroundColor: getCategoryColor(category) }}
+                                />
+                                <span className="capitalize">
+                                  {category.charAt(0).toUpperCase() + category.slice(1).replace(/-/g, ' ')}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
                     </FormItem>
-                  )}
+                  )} 
                 />
 
-                <FormField
-                  control={form.control}
-                  name="note"
+                <FormField 
+                  control={form.control} 
+                  name="notes" 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Note</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="Add details about this merchant" 
-                          className="resize-none"
-                          {...field}
-                        />
+                        <Textarea placeholder="Add details about this merchant" className="resize-none" {...field} />
                       </FormControl>
                       <FormDescription>
                         Optional note to include with transactions from this merchant
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
-                  )}
+                  )} 
                 />
 
                 {!currentNote && (
                   <div className="flex items-center space-x-2 rounded-md border p-4">
-                    <input
-                      type="checkbox"
-                      id="apply-to-transactions"
-                      checked={applyToTransactions}
-                      onChange={(e) => setApplyToTransactions(e.target.checked)}
+                    <input 
+                      type="checkbox" 
+                      id="apply-to-transactions" 
+                      checked={applyToTransactions} 
+                      onChange={e => setApplyToTransactions(e.target.checked)} 
                       className="h-4 w-4 rounded border-gray-300"
                     />
                     <div className="leading-none">
-                      <label
-                        htmlFor="apply-to-transactions"
-                        className="text-sm font-medium"
-                      >
+                      <label htmlFor="apply-to-transactions" className="text-sm font-medium">
                         Apply to existing transactions
                       </label>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground mt-1">
                         Update existing transactions with this merchant (only if they have no category or notes)
                       </p>
                     </div>
@@ -519,10 +493,7 @@ const MerchantNotesManager = () => {
           </DialogContent>
         </Dialog>
 
-        <AlertDialog
-          open={isDeleteDialogOpen}
-          onOpenChange={setIsDeleteDialogOpen}
-        >
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Merchant Note</AlertDialogTitle>

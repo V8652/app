@@ -1,13 +1,11 @@
-
 // Expense extraction and parsing logic
 
 import { Expense, ExpenseCategory } from '@/types';
 import { getEmailDetails, parseEmailBody } from './gmail-auth';
 import { v4 as uuidv4 } from 'uuid';
 import { applyParserRules } from './apply-parser-rules';
-import { getParserRules } from './parser-rules';
+import { getParserRules, addParserRule } from './parser-rules';
 import { getTransactions, addTransaction, updateTransaction } from './db';
-import { toast } from '@/hooks/use-toast';
 
 // Main function to extract expense from email
 export const extractExpenseFromEmail = async (messageId: string): Promise<Expense | null> => {
@@ -58,7 +56,7 @@ export const extractExpenseFromEmail = async (messageId: string): Promise<Expens
     }
   } catch (error) {
     console.error('Error extracting expense from email:', error);
-    throw error; // Propagate error up for better error handling
+    return null;
   }
 };
 
@@ -92,55 +90,23 @@ export const batchProcessEmails = async (messageIds: string[]): Promise<Expense[
   return expenses;
 };
 
+// Format date for Gmail search query
+// Gmail requires dates in YYYY/M/D format (no leading zeros)
+const formatDateForGmailSearch = (date: Date): string => {
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+};
+
 // List expense emails using parser rules as guidance and consider date range
 export const listExpenseEmails = async (maxResults = 500, fromDate?: number, toDate?: number): Promise<any[]> => {
   try {
-    console.log(`Running listExpenseEmails with fromDate: ${fromDate}, toDate: ${toDate}`);
-    
-    // Validate Gmail API access before proceeding
-    if (!window.gapi?.client?.gmail) {
-      try {
-        console.log('Gmail API not loaded, attempting to load it');
-        await window.gapi.client.load('gmail', 'v1');
-      } catch (error) {
-        console.error('Failed to load Gmail API:', error);
-        toast({
-          title: 'Connection Error',
-          description: 'Failed to connect to Gmail API. Please try reconnecting your account.',
-          variant: 'destructive',
-        });
-        throw new Error('Gmail API initialization failed. Please reconnect your account.');
-      }
-    }
-    
-    // Check if we have a valid token
-    try {
-      const token = window.gapi.client.getToken();
-      if (!token) {
-        console.error('No valid token available');
-        toast({
-          title: 'Authentication Error',
-          description: 'Your session has expired. Please reconnect your Gmail account.',
-          variant: 'destructive',
-        });
-        throw new Error('Authentication error: No valid token found. Please reconnect your Gmail account.');
-      }
-    } catch (tokenError) {
-      console.error('Error checking token:', tokenError);
-      throw new Error('Authentication error: Failed to validate your session. Please reconnect your Gmail account.');
-    }
-    
     // Get all parser rules to build a combined query
     const rules = await getParserRules();
     const enabledRules = rules.filter(rule => rule.enabled);
     
+    console.log(`Found ${enabledRules.length} enabled parser rules out of ${rules.length} total rules`);
+    
     if (enabledRules.length === 0) {
-      console.log('No enabled parser rules found');
-      toast({
-        title: 'No Parser Rules',
-        description: 'Please create and enable at least one parser rule in Settings > Parsing.',
-        variant: 'destructive',
-      });
+      console.log('No enabled parser rules found. Please create and enable some parser rules.');
       return [];
     }
     
@@ -148,23 +114,45 @@ export const listExpenseEmails = async (maxResults = 500, fromDate?: number, toD
     let searchQuery = '';
     
     // Combine all sender matches with OR
-    const senderQueries = enabledRules
-      .filter(rule => rule.senderMatch && rule.senderMatch.trim() !== '')
-      .map(rule => `from:(${rule.senderMatch})`);
-      
-    if (senderQueries.length > 0) {
+    const allSenderPatterns: string[] = [];
+    enabledRules.forEach(rule => {
+      const senderPatterns = Array.isArray(rule.senderMatch) ? rule.senderMatch : [rule.senderMatch];
+      senderPatterns.forEach(pattern => {
+        if (pattern && pattern.trim() !== '' && !allSenderPatterns.includes(pattern)) {
+          allSenderPatterns.push(pattern);
+        }
+      });
+    });
+    
+    if (allSenderPatterns.length > 0) {
+      const senderQueries = allSenderPatterns.map(pattern => `from:(${pattern})`);
       searchQuery += `(${senderQueries.join(' OR ')})`;
+      console.log(`Added sender patterns to query: ${allSenderPatterns.join(', ')}`);
+    } else {
+      console.log('Warning: No sender patterns found in enabled rules');
     }
     
     // Add subject query if available (combine with OR)
-    const subjectRules = enabledRules.filter(rule => rule.subjectMatch && rule.subjectMatch.trim() !== '');
-    if (subjectRules.length > 0) {
-      const subjectQueries = subjectRules.map(rule => `subject:(${rule.subjectMatch})`);
+    const allSubjectPatterns: string[] = [];
+    enabledRules.forEach(rule => {
+      if (!rule.subjectMatch) return;
+      
+      const subjectPatterns = Array.isArray(rule.subjectMatch) ? rule.subjectMatch : [rule.subjectMatch];
+      subjectPatterns.forEach(pattern => {
+        if (pattern && pattern.trim() !== '' && !allSubjectPatterns.includes(pattern)) {
+          allSubjectPatterns.push(pattern);
+        }
+      });
+    });
+    
+    if (allSubjectPatterns.length > 0) {
+      const subjectQueries = allSubjectPatterns.map(pattern => `subject:(${pattern})`);
       if (searchQuery) {
         searchQuery += ` AND (${subjectQueries.join(' OR ')})`;
       } else {
         searchQuery += `(${subjectQueries.join(' OR ')})`;
       }
+      console.log(`Added subject patterns to query: ${allSubjectPatterns.join(', ')}`);
     }
     
     // Add any additional search queries (combine with OR)
@@ -174,110 +162,168 @@ export const listExpenseEmails = async (maxResults = 500, fromDate?: number, toD
     
     if (additionalQueries.length > 0) {
       if (searchQuery) {
-        searchQuery += ` AND (${additionalQueries.join(' OR ')})`;
+        searchQuery += ` OR (${additionalQueries.join(' OR ')})`;
       } else {
         searchQuery += `(${additionalQueries.join(' OR ')})`;
       }
+      console.log(`Added additional search patterns: ${additionalQueries.join(', ')}`);
     }
     
-    // Add date range filter if provided - Using proper date format for Gmail query
+    // Handle date range with proper formatting for Gmail search query
     if (fromDate) {
-      // Convert UNIX timestamp to Gmail date format (YYYY/MM/DD)
-      const fromDateObj = new Date(fromDate * 1000);
-      const formattedFromDate = `${fromDateObj.getFullYear()}/${(fromDateObj.getMonth() + 1).toString().padStart(2, '0')}/${fromDateObj.getDate().toString().padStart(2, '0')}`;
-      
-      // Use the Gmail "after:" operator for the from date
-      if (searchQuery) {
-        searchQuery += ` after:${formattedFromDate}`;
-      } else {
-        searchQuery += `after:${formattedFromDate}`;
+      try {
+        const fromDateObj = new Date(fromDate * 1000);
+        console.log(`Original fromDate object: ${fromDateObj.toISOString()}`);
+        
+        // Format date for Gmail search query (YYYY/M/D)
+        const formattedFromDate = formatDateForGmailSearch(fromDateObj);
+        console.log(`Using fromDate: ${formattedFromDate} (from timestamp: ${fromDate})`);
+        
+        // Add to search query
+        searchQuery += searchQuery ? ` after:${formattedFromDate}` : `after:${formattedFromDate}`;
+      } catch (error) {
+        console.error("Error formatting fromDate:", error);
       }
-      
-      console.log(`Added after:${formattedFromDate} to query`);
+    } else {
+      console.log('No fromDate provided');
     }
     
     if (toDate) {
-      // Convert UNIX timestamp to Gmail date format (YYYY/MM/DD)
-      const toDateObj = new Date(toDate * 1000);
-      // Add 1 day to make it inclusive of the end date (before: is exclusive)
-      // Gmail's 'before:' is exclusive of the specified date
-      toDateObj.setDate(toDateObj.getDate() + 1);
-      const formattedToDate = `${toDateObj.getFullYear()}/${(toDateObj.getMonth() + 1).toString().padStart(2, '0')}/${toDateObj.getDate().toString().padStart(2, '0')}`;
-      
-      // Use the Gmail "before:" operator for the to date
-      searchQuery += ` before:${formattedToDate}`;
-      
-      console.log(`Added before:${formattedToDate} to query`);
+      try {
+        const toDateObj = new Date(toDate * 1000);
+        console.log(`Original toDate object: ${toDateObj.toISOString()}`);
+        
+        // For "before:" we need to add 1 day since before: is exclusive
+        toDateObj.setDate(toDateObj.getDate() + 1);
+        
+        // Format date for Gmail search query (YYYY/M/D)
+        const formattedToDate = formatDateForGmailSearch(toDateObj);
+        console.log(`Using toDate: ${formattedToDate} (from timestamp: ${toDate})`);
+        
+        // Add to search query
+        searchQuery += searchQuery ? ` before:${formattedToDate}` : `before:${formattedToDate}`;
+      } catch (error) {
+        console.error("Error formatting toDate:", error);
+      }
+    } else {
+      console.log('No toDate provided');
     }
     
-    console.log('Using Gmail search query:', searchQuery);
+    // Ensure we have a valid query or use a default
+    if (!searchQuery.trim()) {
+      // If no search parameters were added, use a fallback query that includes emails from the last 90 days
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const formattedFallbackDate = formatDateForGmailSearch(ninetyDaysAgo);
+      searchQuery = `after:${formattedFallbackDate}`;
+      console.warn('Using fallback search query as no valid parameters were found:', searchQuery);
+    }
+    
+    console.log('Final Gmail search query:', searchQuery);
     
     try {
-      // Attempt to call the Gmail API with retry mechanism
-      let retryCount = 0;
-      const maxRetries = 2;
-      
-      while (retryCount <= maxRetries) {
-        try {
-          const response = await window.gapi.client.gmail.users.messages.list({
-            userId: 'me',
-            q: searchQuery || 'is:unread',  // Use a fallback query if no rules matched
-            maxResults: maxResults
-          });
-          
-          const messages = response.result.messages || [];
-          console.log(`Found ${messages.length} emails matching query`);
-          
-          // Check if no emails were found
-          if (!messages || messages.length === 0) {
-            console.log('No emails found matching the query and date range');
-            return [];
-          }
-          
-          // Log some information about the first few messages to help with debugging
-          if (messages.length > 0) {
-            console.log(`First few message IDs: ${messages.slice(0, 3).map(m => m.id).join(', ')}`);
-          }
-          
-          return messages;
-        } catch (apiError: any) {
-          // Check if error is authorization-related (401)
-          if (apiError?.status === 401 || (apiError?.result?.error?.code === 401)) {
-            if (retryCount < maxRetries) {
-              console.log(`Authentication error, retry attempt ${retryCount + 1}`);
-              retryCount++;
-              
-              // Wait a bit before retrying
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              continue;
-            } else {
-              console.error('Authentication error after retries:', apiError);
-              throw new Error('Authentication error: Your session has expired. Please reconnect your Gmail account.');
-            }
-          } else {
-            // For other errors, throw immediately
-            console.error('Gmail API error details:', apiError?.result?.error || apiError);
-            
-            if (apiError?.status === 403) {
-              throw new Error('Permission denied: You may need to reconnect your Gmail account with proper permissions.');
-            } else if (apiError?.status === 429) {
-              throw new Error('Rate limit exceeded: Too many requests to Gmail API. Please try again later.');
-            } else if (apiError?.result?.error?.message) {
-              throw new Error(`Gmail API error: ${apiError.result.error.message}`);
-            } else {
-              throw new Error('Failed to retrieve emails from Gmail. Please try again.');
-            }
-          }
-        }
+      // Check if Gmail API is loaded
+      if (!window.gapi?.client?.gmail) {
+        console.log('Gmail API not loaded yet, attempting to load it');
+        await window.gapi.client.load('gmail', 'v1');
       }
       
-      throw new Error('Failed to communicate with Gmail after several attempts. Please try again later.');
+      // Make the API request to list messages
+      console.log(`Making Gmail API request with query: "${searchQuery}" and maxResults: ${maxResults}`);
+      const response = await window.gapi.client.gmail.users.messages.list({
+        userId: 'me',
+        q: searchQuery,
+        maxResults: maxResults
+      });
+      
+      const messages = response.result.messages || [];
+      console.log(`Found ${messages.length} emails matching query`);
+      
+      if (messages.length === 0) {
+        console.log(`No emails found matching the query. Check your parser rules and date range.`);
+        console.log(`Date range: ${fromDate ? new Date(fromDate * 1000).toISOString() : 'none'} to ${toDate ? new Date(toDate * 1000).toISOString() : 'none'}`);
+      }
+      
+      return messages;
     } catch (error) {
       console.error('Error listing expense emails:', error);
-      throw error; // Propagate error up for better error handling
+      // Log more details about the error
+      if (error.result && error.result.error) {
+        console.error('API Error details:', error.result.error);
+      }
+      throw error;
     }
   } catch (error) {
     console.error('Error listing expense emails:', error);
-    throw error; // Propagate error up for better error handling
+    throw error;
+  }
+};
+
+// Create sample parser rules if none exist to help users get started
+export const ensureDefaultParserRules = async (): Promise<void> => {
+  try {
+    const rules = await getParserRules();
+    
+    // Add default rules if none exist
+    if (rules.length === 0) {
+      console.log('Creating default parser rules');
+      
+      // Amazon order confirmation
+      await addParserRule({
+        name: "Amazon Order",
+        enabled: true,
+        senderMatch: "amazon.com",
+        subjectMatch: ["order", "purchase"],
+        amountRegex: ["\\$(\\d+\\.\\d{2})", "Total: \\$(\\d+\\.\\d{2})"],
+        merchantCondition: "Amazon",
+        paymentBank: "Credit Card",
+        skipCondition: "cancel|refund",
+        noExtractCondition: "",
+        dateRegex: "",
+        priority: 10,
+        additionalSearchQuery: "",
+        extractMerchantFromSubject: false,
+      });
+      
+      // PayPal receipt
+      await addParserRule({
+        name: "PayPal Receipt",
+        enabled: true,
+        senderMatch: "paypal.com",
+        subjectMatch: ["receipt", "payment"],
+        amountRegex: ["\\$(\\d+\\.\\d{1,2})", "Amount: \\$(\\d+\\.\\d{1,2})"],
+        merchantCondition: "to (.*?)\\s",
+        paymentBank: "PayPal",
+        skipCondition: "",
+        noExtractCondition: "",
+        dateRegex: "",
+        priority: 5,
+        additionalSearchQuery: "",
+        extractMerchantFromSubject: false,
+      });
+      
+      // Bank Statement
+      await addParserRule({
+        name: "Bank Statement",
+        enabled: true,
+        senderMatch: ["bank", "statement", "transaction"],
+        subjectMatch: ["statement", "transaction", "alert"],
+        amountRegex: ["\\$(\\d+\\.\\d{2})", "(\\d+\\.\\d{2})"],
+        merchantCondition: "",
+        paymentBank: "Bank",
+        skipCondition: "",
+        noExtractCondition: "",
+        dateRegex: "",
+        priority: 3,
+        additionalSearchQuery: "",
+        extractMerchantFromSubject: false,
+      });
+      
+      console.log('Default parser rules created successfully');
+    } else {
+      console.log(`Found ${rules.length} existing parser rules, skipping default rule creation`);
+    }
+  } catch (error) {
+    console.error('Error creating default parser rules:', error);
   }
 };

@@ -68,21 +68,30 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				},
-				// Android specific colors for components
-				androidPrimary: '#1976D2',
-				androidSecondary: '#F5F5F5',
-				androidBackground: '#FFFFFF',
-				androidSurface: '#FFFFFF',
-				androidError: '#B00020',
-				androidSuccess: '#4CAF50',
-				androidWarning: '#FF9800',
-				androidInfo: '#2196F3',
+				// Category-specific colors with improved contrast
+				category: {
+					groceries: '#38A169',
+					utilities: '#3182CE',
+					entertainment: '#805AD5',  
+					transportation: '#DD6B20',
+					dining: '#E53E3E',
+					shopping: '#4C51BF',
+					health: '#D53F8C',
+					travel: '#00B5D8',
+					housing: '#2F855A',
+					education: '#DD6B20',
+					subscriptions: '#6B46C1',
+					other: '#718096'
+				}
 			},
 			borderRadius: {
-				// Rounder corners for Android Material Design
+				// Rounder corners for modern design
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',
-				sm: 'calc(var(--radius) - 4px)'
+				sm: 'calc(var(--radius) - 4px)',
+				xl: '1rem',
+				'2xl': '1.5rem',
+				'3xl': '2rem',
 			},
 			scale: {
 				'98': '0.98',  // Add custom scale value for active:scale-98
@@ -119,23 +128,53 @@ export default {
 				float: {
 					'0%, 100%': { transform: 'translateY(0)' },
 					'50%': { transform: 'translateY(-5px)' }
+				},
+				shimmer: {
+					'0%': { backgroundPosition: '-200% 0' },
+					'100%': { backgroundPosition: '200% 0' }
+				},
+				slideInFromBottom: {
+					from: { transform: 'translateY(20px)', opacity: '0' },
+					to: { transform: 'translateY(0)', opacity: '1' }
+				},
+				expandWidth: {
+					from: { width: '0%' },
+					to: { width: '100%' }
+				},
+				spin: {
+					from: { transform: 'rotate(0deg)' },
+					to: { transform: 'rotate(360deg)' }
+				},
+				ripple: {
+					'0%': { transform: 'scale(0)', opacity: '0.8' },
+					'100%': { transform: 'scale(4)', opacity: '0' }
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
-				'fade-in': 'fadeIn 0.5s ease-out',
-				'fade-in-up': 'fadeInUp 0.5s ease-out',
-				'fade-in-down': 'fadeInDown 0.5s ease-out',
+				'fade-in': 'fadeIn 0.4s ease-out',
+				'fade-in-up': 'fadeInUp 0.4s ease-out',
+				'fade-in-down': 'fadeInDown 0.4s ease-out',
 				'slide-in': 'slideIn 0.3s ease-out',
 				'pulse-slow': 'pulse 3s infinite',
-				'float': 'float 3s ease-in-out infinite'
+				'float': 'float 3s ease-in-out infinite',
+				'shimmer': 'shimmer 2s infinite linear',
+				'slide-in-from-bottom': 'slideInFromBottom 0.4s ease-out',
+				'expand-width': 'expandWidth 0.4s ease-out',
+				'spin-slow': 'spin 3s linear infinite',
+				'ripple': 'ripple 0.8s ease-out'
 			},
 			boxShadow: {
 				'subtle': '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)',
 				'elevated': '0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23)',
 				'higher': '0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23)',
-				'inner-subtle': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)'
+				'inner-subtle': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)',
+				'card': '0 4px 12px rgba(0, 0, 0, 0.08)',
+				'card-hover': '0 8px 24px rgba(0, 0, 0, 0.12)',
+				'button': '0 2px 8px -1px rgba(0, 0, 0, 0.12)',
+				'premium': '0 10px 30px -5px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05)',
+				'premium-hover': '0 12px 40px -8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1)'
 			},
 			backdropBlur: {
 				'2xs': '2px',

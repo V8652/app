@@ -1,14 +1,15 @@
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { Expense, CategorySummary } from '@/types';
 import { Card } from '@/components/ui/card';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, 
   Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
+import { getUserCategories } from '@/lib/db';
 
-// Category colors for charts
-const CATEGORY_COLORS: Record<string, string> = {
+// Default category colors for charts
+const DEFAULT_CATEGORY_COLORS: Record<string, string> = {
   groceries: '#4ade80',
   utilities: '#60a5fa',
   entertainment: '#c084fc',
@@ -20,7 +21,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   housing: '#34d399',
   education: '#fb923c',
   subscriptions: '#a78bfa',
-  other: '#94a3b8'
+  other: '#94a3b8',
+  // Add more default categories here
+  snacks: '#ff9500',
+  'home-expenses': '#4a6fa5',
+  personal: '#9b5de5',
+  'health/medical': '#00bbf9',
+  loan: '#fee440'
 };
 
 interface ExpenseSummaryChartProps {
@@ -29,6 +36,28 @@ interface ExpenseSummaryChartProps {
 }
 
 const ExpenseSummaryChart = ({ expenses, chartType = 'pie' }: ExpenseSummaryChartProps) => {
+  const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>({});
+  
+  useEffect(() => {
+    const loadCustomCategoryColors = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        if (userCategories.categoryColors) {
+          setCustomCategoryColors(userCategories.categoryColors);
+        }
+      } catch (error) {
+        console.error('Error loading custom category colors:', error);
+      }
+    };
+    
+    loadCustomCategoryColors();
+  }, []);
+  
+  // Get color for a category
+  const getCategoryColor = (category: string): string => {
+    return customCategoryColors[category] || DEFAULT_CATEGORY_COLORS[category] || DEFAULT_CATEGORY_COLORS.other;
+  };
+  
   // Calculate category summaries
   const categorySummaries = useMemo(() => {
     const summaryMap = new Map<string, CategorySummary>();
@@ -37,11 +66,14 @@ const ExpenseSummaryChart = ({ expenses, chartType = 'pie' }: ExpenseSummaryChar
       const { category, amount } = expense;
       
       if (!summaryMap.has(category)) {
+        // Get color for this category
+        const color = getCategoryColor(category);
+        
         summaryMap.set(category, {
           category,
           total: 0,
           count: 0,
-          color: CATEGORY_COLORS[category] || CATEGORY_COLORS.other
+          color: color
         });
       }
       
@@ -53,7 +85,7 @@ const ExpenseSummaryChart = ({ expenses, chartType = 'pie' }: ExpenseSummaryChar
     return Array.from(summaryMap.values())
       .filter(summary => summary.total > 0)
       .sort((a, b) => b.total - a.total);
-  }, [expenses]);
+  }, [expenses, customCategoryColors]);
 
   // Calculate total amount
   const totalAmount = useMemo(() => {
@@ -77,7 +109,7 @@ const ExpenseSummaryChart = ({ expenses, chartType = 'pie' }: ExpenseSummaryChar
       
       return (
         <div className="bg-popover text-popover-foreground p-3 rounded-md shadow-md">
-          <p className="font-medium capitalize">{data.category}</p>
+          <p className="font-medium capitalize">{data.category.replace(/-/g, ' ')}</p>
           <p className="text-sm">{formatCurrency(data.total)}</p>
           <p className="text-xs text-muted-foreground">{percentage}% of total</p>
           <p className="text-xs text-muted-foreground">{data.count} transactions</p>
@@ -96,7 +128,7 @@ const ExpenseSummaryChart = ({ expenses, chartType = 'pie' }: ExpenseSummaryChar
             className="inline-block w-3 h-3 rounded-full mr-2" 
             style={{ backgroundColor: entry.color }}
           />
-          <span className="capitalize">{entry.value}</span>
+          <span className="capitalize">{entry.value.replace(/-/g, ' ')}</span>
         </li>
       ))}
     </ul>
@@ -125,7 +157,7 @@ const ExpenseSummaryChart = ({ expenses, chartType = 'pie' }: ExpenseSummaryChar
                   outerRadius={80}
                   innerRadius={40}
                   paddingAngle={2}
-                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                  label={({ name, percent }) => `${name.replace(/-/g, ' ')} (${(percent * 100).toFixed(0)}%)`}
                   labelLine={false}
                 >
                   {categorySummaries.map((entry, index) => (

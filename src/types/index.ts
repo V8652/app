@@ -1,30 +1,28 @@
+
 export type ExpenseCategory =
-  | 'groceries'
-  | 'utilities'
-  | 'entertainment'
-  | 'transportation'
-  | 'dining'
-  | 'shopping'
-  | 'health'
-  | 'travel'
-  | 'housing'
-  | 'education'
-  | 'subscriptions'
-  | 'other';
+  | 'other'
+  | string; // Allow any string to support custom categories
 
 export type IncomeCategory =
-  | 'salary'
-  | 'freelance'
-  | 'investment'
-  | 'gift'
-  | 'refund'
-  | 'other';
+  | 'other'
+  | string; // Allow any string to support custom categories
 
 export type TimeFrame =
   | 'week'
   | 'month'
   | 'quarter'
   | 'year';
+
+// Updated Preference interface to match UserPreferences
+export interface Preference {
+  id: string;
+  defaultCurrency: string;
+  defaultExpenseCategory: ExpenseCategory;
+  defaultIncomeCategory: IncomeCategory;
+  defaultTimeFrame: TimeFrame;
+  categorizeAutomatically: boolean;
+  gmailCredentials?: GmailCredentials;
+}
 
 export interface UserPreferences {
   defaultCurrency: string;
@@ -101,4 +99,18 @@ export interface CategorySummary {
 export interface DateRange {
   from: Date;
   to: Date;
+}
+
+// Updated UserCategories interface to ensure categoryColors is properly typed
+export interface UserCategories {
+  id?: string;
+  expenseCategories?: string[];
+  incomeCategories?: string[];
+  categoryColors?: Record<string, string>; // Map category names to colors
+}
+
+// Add interface for category with color
+export interface CategoryWithColor {
+  name: string;
+  color: string;
 }

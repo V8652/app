@@ -51,3 +51,13 @@ export const EditableIncome: React.FC<EditableIncomeProps> = ({
     </>
   );
 };
+
+// Add a component that displays income-related information
+interface TransactionListViewIncomeExtensionProps {
+  incomes: Income[];
+}
+
+export const TransactionListViewIncomeExtension: React.FC<TransactionListViewIncomeExtensionProps> = ({ incomes }) => {
+  // This component is currently a placeholder that could be expanded later
+  return null;
+};

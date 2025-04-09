@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -20,7 +20,7 @@ import { CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Expense, ExpenseCategory } from '@/types';
-import { updateTransaction } from '@/lib/db';
+import { updateTransaction, getUserCategories } from '@/lib/db';
 
 const expenseSchema = z.object({
   merchantName: z.string().min(1, 'Merchant name is required'),
@@ -42,7 +42,32 @@ interface ExpenseEditFormProps {
 
 const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
   
+  // FIX: Use a form key to force re-creation of the form when expense changes
+  const formKey = expense?.id || 'default-key';
+  
+  // Load custom categories
+  useEffect(() => {
+    const loadCustomCategories = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        if (userCategories.expenseCategories) {
+          setCustomCategories(userCategories.expenseCategories);
+        }
+        if (userCategories.categoryColors) {
+          setCategoryColors(userCategories.categoryColors);
+        }
+      } catch (error) {
+        console.error('Error loading custom categories:', error);
+      }
+    };
+    
+    loadCustomCategories();
+  }, []);
+  
+  // FIX: Reset form when expense changes
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
@@ -54,6 +79,18 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
       notes: expense.notes || '',
     },
   });
+  
+  // FIX: Update form values when expense changes
+  useEffect(() => {
+    form.reset({
+      merchantName: expense.merchantName,
+      amount: expense.amount,
+      paymentMethod: expense.paymentMethod || '',
+      date: new Date(expense.date),
+      category: expense.category,
+      notes: expense.notes || '',
+    });
+  }, [expense, form]);
   
   const handleSubmit = async (values: ExpenseFormValues) => {
     setIsSubmitting(true);
@@ -67,7 +104,7 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
         category: values.category as ExpenseCategory,
         notes: values.notes || '',
         isEdited: true,
-        currency: 'INR', // Update currency to INR
+        currency: expense.currency || 'INR',
       };
       
       await updateTransaction(updatedExpense);
@@ -80,9 +117,14 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
     }
   };
   
+  // Helper function to get color for a category
+  const getCategoryColor = (category: string): string => {
+    return categoryColors[category] || '#8E9196';
+  };
+  
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Expense</DialogTitle>
           <DialogDescription>
@@ -133,18 +175,23 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="groceries">Groceries</SelectItem>
-                      <SelectItem value="utilities">Utilities</SelectItem>
-                      <SelectItem value="entertainment">Entertainment</SelectItem>
-                      <SelectItem value="transportation">Transportation</SelectItem>
-                      <SelectItem value="dining">Dining</SelectItem>
-                      <SelectItem value="shopping">Shopping</SelectItem>
-                      <SelectItem value="health">Health</SelectItem>
-                      <SelectItem value="travel">Travel</SelectItem>
-                      <SelectItem value="housing">Housing</SelectItem>
-                      <SelectItem value="education">Education</SelectItem>
-                      <SelectItem value="subscriptions">Subscriptions</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      {/* Only include 'other' as the default category */}
+                      <SelectItem value="other" className="capitalize">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getCategoryColor('other') }}></div>
+                          <span>Other</span>
+                        </div>
+                      </SelectItem>
+                      
+                      {/* Include all custom categories */}
+                      {customCategories.map(category => (
+                        <SelectItem key={category} value={category} className="capitalize">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getCategoryColor(category) }}></div>
+                            <span>{category.replace(/-/g, ' ')}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -219,7 +266,7 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
               )}
             />
             
-            <DialogFooter>
+            <DialogFooter className="mt-6 pt-2 border-t">
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>

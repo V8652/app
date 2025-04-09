@@ -1,5 +1,4 @@
 
-import { useState } from 'react';
 import { Expense } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -7,10 +6,10 @@ import { format } from 'date-fns';
 import { Card } from '@/components/ui/card';
 import { 
   ShoppingBag, Utensils, Home, Car, Monitor, 
-  Zap, Heart, Plane, School, Wallet, Bookmark,
-  Edit
+  Zap, Heart, Plane, School, Wallet, Bookmark
 } from 'lucide-react';
-import ExpenseEditForm from './ExpenseEditForm';
+import { getUserCategories } from '@/lib/db';
+import { useEffect, useState } from 'react';
 
 // Category Icon mapping
 const CategoryIcons: Record<string, React.ReactNode> = {
@@ -28,8 +27,8 @@ const CategoryIcons: Record<string, React.ReactNode> = {
   other: <Wallet size={16} />
 };
 
-// Category background color for Material Design
-const CategoryColors: Record<string, string> = {
+// Default category background colors
+const DefaultCategoryColors: Record<string, string> = {
   groceries: 'bg-green-50 text-green-700',
   utilities: 'bg-blue-50 text-blue-700',
   entertainment: 'bg-purple-50 text-purple-700',
@@ -51,7 +50,22 @@ export interface ExpenseCardProps {
 }
 
 const ExpenseCard = ({ expense, onClick, onUpdate }: ExpenseCardProps) => {
-  const [isEditFormOpen, setIsEditFormOpen] = useState(false);
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
+  
+  useEffect(() => {
+    const loadCategoryColors = async () => {
+      try {
+        const userCategories = await getUserCategories();
+        if (userCategories.categoryColors) {
+          setCategoryColors(userCategories.categoryColors);
+        }
+      } catch (error) {
+        console.error('Error loading category colors:', error);
+      }
+    };
+    
+    loadCategoryColors();
+  }, []);
 
   const {
     merchantName,
@@ -75,69 +89,73 @@ const ExpenseCard = ({ expense, onClick, onUpdate }: ExpenseCardProps) => {
   };
 
   const handleClick = () => {
-    setIsEditFormOpen(true);
+    if (onClick) onClick();
   };
-
-  const handleUpdateSuccess = () => {
-    setIsEditFormOpen(false);
-    if (onUpdate) onUpdate();
+  
+  // Get category color from user preferences or fall back to default
+  const getCategoryColor = () => {
+    const customColor = categoryColors[category];
+    if (customColor) {
+      return { 
+        backgroundColor: customColor,
+        color: '#fff'
+      };
+    }
+    return {}; // Use default styling
+  };
+  
+  // Get category badge class based on custom color or default
+  const getCategoryBadgeClass = () => {
+    if (categoryColors[category]) {
+      return '';
+    }
+    return DefaultCategoryColors[category] || 'bg-gray-50 text-gray-700';
   };
 
   return (
-    <>
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={handleClick}
-        className="md-ripple"
-      >
-        <Card className="android-card border-l-4 relative" style={{ borderLeftColor: `var(--${category}-color, var(--primary))` }}>
-          <div className="absolute top-2 right-2">
-            <Edit className="h-4 w-4 text-muted-foreground" />
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={handleClick}
+      className="md-ripple"
+    >
+      <Card className="android-card border-l-4" style={{ borderLeftColor: categoryColors[category] || `var(--${category}-color, var(--primary))` }}>
+        <div className="p-4">
+          <div className="flex justify-between items-start">
+            <div className="flex-1">
+              {notes && (
+                <p className="text-base font-medium text-foreground mb-1 line-clamp-2">{notes}</p>
+              )}
+              <h3 className="text-sm text-muted-foreground truncate">{merchantName}</h3>
+              <p className="text-xs text-muted-foreground mt-1">{timeAgo}</p>
+            </div>
+            <div className="flex flex-col items-end">
+              <span className="text-lg font-semibold text-foreground">
+                {formatCurrency(amount, currency)}
+              </span>
+            </div>
           </div>
-          <div className="p-4">
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                {notes && (
-                  <p className="text-base font-medium text-foreground mb-1 line-clamp-2">{notes}</p>
-                )}
-                <h3 className="text-sm text-muted-foreground truncate">{merchantName}</h3>
-                <p className="text-xs text-muted-foreground mt-1">{timeAgo}</p>
-              </div>
-              <div className="flex flex-col items-end">
-                <span className="text-lg font-semibold text-foreground">
-                  {formatCurrency(amount, currency)}
-                </span>
-              </div>
+          
+          <div className="flex items-center justify-between mt-3">
+            <div 
+              className={`flex items-center rounded-full px-2 py-1 text-xs ${getCategoryBadgeClass()}`}
+              style={getCategoryColor()}
+            >
+              <span className="mr-1">{CategoryIcons[category]}</span>
+              <span className="capitalize">{category.replace(/-/g, ' ')}</span>
             </div>
             
-            <div className="flex items-center justify-between mt-3">
-              <div className={`flex items-center rounded-full px-2 py-1 text-xs ${CategoryColors[category]}`}>
-                <span className="mr-1">{CategoryIcons[category]}</span>
-                <span className="capitalize">{category}</span>
-              </div>
-              
-              {paymentMethod && (
-                <span className="text-xs bg-secondary px-2 py-1 rounded-full text-muted-foreground">
-                  {paymentMethod}
-                </span>
-              )}
-            </div>
+            {paymentMethod && (
+              <span className="text-xs bg-secondary px-2 py-1 rounded-full text-muted-foreground">
+                {paymentMethod}
+              </span>
+            )}
           </div>
-        </Card>
-      </motion.div>
-
-      {isEditFormOpen && (
-        <ExpenseEditForm
-          expense={expense}
-          isOpen={isEditFormOpen}
-          onClose={() => setIsEditFormOpen(false)}
-          onSave={handleUpdateSuccess}
-        />
-      )}
-    </>
+        </div>
+      </Card>
+    </motion.div>
   );
 };
 

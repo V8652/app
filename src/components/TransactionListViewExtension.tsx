@@ -1,13 +1,12 @@
 
 import React, { useState } from 'react';
-import { Expense, Income, Transaction } from '@/types';
+import { Expense } from '@/types';
 import ExpenseEditForm from './ExpenseEditForm';
-import IncomeEditForm from './IncomeEditForm';
 import { Button } from './ui/button';
 import { PencilIcon } from 'lucide-react';
 
 interface EditableTransactionProps {
-  transaction: Transaction;
+  transaction: Expense;
   onTransactionUpdated: () => void;
 }
 
@@ -41,18 +40,9 @@ export const EditableTransaction: React.FC<EditableTransactionProps> = ({
         <PencilIcon className="h-4 w-4" />
       </Button>
       
-      {isEditing && transaction.type === 'expense' && (
+      {isEditing && (
         <ExpenseEditForm
-          expense={transaction as Expense}
-          isOpen={isEditing}
-          onClose={handleEditClose}
-          onSave={handleSaved}
-        />
-      )}
-
-      {isEditing && transaction.type === 'income' && (
-        <IncomeEditForm
-          income={transaction as Income}
+          expense={transaction}
           isOpen={isEditing}
           onClose={handleEditClose}
           onSave={handleSaved}
@@ -60,4 +50,14 @@ export const EditableTransaction: React.FC<EditableTransactionProps> = ({
       )}
     </>
   );
+};
+
+// Add a component that displays expense-related information
+interface TransactionListViewExtensionProps {
+  expenses: Expense[];
+}
+
+export const TransactionListViewExtension: React.FC<TransactionListViewExtensionProps> = ({ expenses }) => {
+  // This component is currently a placeholder that could be expanded later
+  return null;
 };
