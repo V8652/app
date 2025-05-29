@@ -1,279 +1,496 @@
-import { openDB } from 'idb';
-import { Expense, Income, Preference, Transaction, UserCategories } from '@/types';
+import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import { Category, Expense, Income, ParserRule, Preference, UserCategories, FinancialSummary, ExpenseCategory, IncomeCategory } from '@/types';
+import { SmsParserRule } from '@/types/sms-parser';
+import { MerchantNote } from '@/types/merchant-note';
+import { dbEvents, DatabaseEvent } from './db-event';
 
-const DB_NAME = 'money-minder-db';
-const DB_VERSION = 1;
-const EXPENSES_STORE = 'expenses';
-const INCOMES_STORE = 'incomes';
-const PREFERENCES_STORE = 'preferences';
-const MERCHANT_NOTES_STORE = 'merchantNotes';
-const PARSER_RULES_STORE = 'parserRules';
-const USER_CATEGORIES_STORE = 'userCategories';
-
-// Export the initDB function needed by other modules
-export async function initDB() {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      // Create object stores if they don't exist
-      if (!db.objectStoreNames.contains(EXPENSES_STORE)) {
-        db.createObjectStore(EXPENSES_STORE, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(INCOMES_STORE)) {
-        db.createObjectStore(INCOMES_STORE, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(PREFERENCES_STORE)) {
-        db.createObjectStore(PREFERENCES_STORE, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(MERCHANT_NOTES_STORE)) {
-        const merchantStore = db.createObjectStore(MERCHANT_NOTES_STORE, { keyPath: 'id' });
-        merchantStore.createIndex('merchantName', 'merchantName', { unique: true });
-      }
-      
-      if (!db.objectStoreNames.contains(PARSER_RULES_STORE)) {
-        db.createObjectStore(PARSER_RULES_STORE, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(USER_CATEGORIES_STORE)) {
-        db.createObjectStore(USER_CATEGORIES_STORE, { keyPath: 'id' });
-      }
-    },
-  });
+interface MoneyMinderDB extends DBSchema {
+  transactions: {
+    key: string;
+    value: Expense | Income;
+    indexes: {
+      'by-date': string;
+      'by-type': string;
+    };
+  };
+  categories: {
+    key: string;
+    value: Category;
+  };
+  merchantNotes: {
+    key: string;
+    value: MerchantNote;
+  };
+  parserRules: {
+    key: string;
+    value: ParserRule;
+  };
+  preferences: {
+    key: string;
+    value: Preference;
+  };
+  smsParserRules: {
+    key: string;
+    value: SmsParserRule;
+  };
+  userCategories: {
+    key: string;
+    value: UserCategories;
+  };
 }
 
-async function getDB() {
-  return initDB();
-}
+let db: IDBPDatabase<MoneyMinderDB> | null = null;
 
-// Expenses
-export async function addExpense(expense: Expense) {
-  const db = await getDB();
-  await db.add(EXPENSES_STORE, expense);
-}
-
-export async function getExpenses(): Promise<Expense[]> {
-  const db = await getDB();
-  return db.getAll(EXPENSES_STORE);
-}
-
-export async function getExpense(id: string): Promise<Expense | undefined> {
-  const db = await getDB();
-  return db.get(EXPENSES_STORE, id);
-}
-
-export async function getExpensesByDateRange(startDate: string, endDate: string): Promise<Expense[]> {
-  const db = await getDB();
-  const tx = db.transaction(EXPENSES_STORE, 'readonly');
-  const store = tx.objectStore(EXPENSES_STORE);
-  let cursor = await store.openCursor();
-  const expenses: Expense[] = [];
-
-  while (cursor) {
-    const expenseDate = new Date(cursor.value.date);
-    if (expenseDate >= new Date(startDate) && expenseDate <= new Date(endDate)) {
-      expenses.push(cursor.value);
+// Define the database stores and their schemas
+export const initDB = async () => {
+  try {
+    if (db) return db;
+    
+    db = await openDB<MoneyMinderDB>('MoneyMinderDB', 1, {
+      upgrade(database, oldVersion, newVersion) {
+        // Create stores if they don't exist
+        if (!database.objectStoreNames.contains('transactions')) {
+          const transactionStore = database.createObjectStore('transactions', { keyPath: 'id' });
+          transactionStore.createIndex('by-date', 'date');
+          transactionStore.createIndex('by-type', 'type');
+        }
+        
+        if (!database.objectStoreNames.contains('categories')) {
+          database.createObjectStore('categories', { keyPath: 'id' });
+        }
+        
+        if (!database.objectStoreNames.contains('merchantNotes')) {
+          database.createObjectStore('merchantNotes', { keyPath: 'id' });
+        }
+        
+        if (!database.objectStoreNames.contains('parserRules')) {
+          database.createObjectStore('parserRules', { keyPath: 'id' });
+        }
+        
+        if (!database.objectStoreNames.contains('preferences')) {
+          database.createObjectStore('preferences', { keyPath: 'id' });
+        }
+        
+        if (!database.objectStoreNames.contains('smsParserRules')) {
+          database.createObjectStore('smsParserRules', { keyPath: 'id' });
+        }
+        
+        if (!database.objectStoreNames.contains('userCategories')) {
+          database.createObjectStore('userCategories', { keyPath: 'id' });
+        }
+      }
+    });
+    
+    // Initialize default preferences if they don't exist
+    const preferences = await db.get('preferences', 'user-preferences');
+    if (!preferences) {
+      await db.put('preferences', {
+        id: 'user-preferences',
+        defaultCurrency: 'INR',
+        defaultExpenseCategory: 'other',
+        defaultIncomeCategory: 'other',
+        defaultTimeFrame: 'month',
+        categorizeAutomatically: true
+      });
     }
-    cursor = await cursor.continue();
-  }
-  return expenses;
-}
-
-// Incomes
-export async function addIncome(income: Income) {
-  const db = await getDB();
-  await db.add(INCOMES_STORE, income);
-}
-
-export async function getIncomes(): Promise<Income[]> {
-  const db = await getDB();
-  return db.getAll(INCOMES_STORE);
-}
-
-export async function getIncome(id: string): Promise<Income | undefined> {
-  const db = await getDB();
-  return db.get(INCOMES_STORE, id);
-}
-
-export async function getIncomesByDateRange(startDate: string, endDate: string): Promise<Income[]> {
-  const db = await getDB();
-  const tx = db.transaction(INCOMES_STORE, 'readonly');
-  const store = tx.objectStore(INCOMES_STORE);
-  let cursor = await store.openCursor();
-  const incomes: Income[] = [];
-
-  while (cursor) {
-    const incomeDate = new Date(cursor.value.date);
-    if (incomeDate >= new Date(startDate) && incomeDate <= new Date(endDate)) {
-      incomes.push(cursor.value);
+    
+    // Initialize default user categories if they don't exist
+    const userCategories = await db.get('userCategories', 'user-categories');
+    if (!userCategories) {
+      await db.put('userCategories', {
+        id: 'user-categories',
+        expenseCategories: [],
+        incomeCategories: [],
+        categoryColors: {},
+        categoryIcons: {}
+      });
     }
-    cursor = await cursor.continue();
+    
+    return db;
+  } catch (error) {
+    console.error('Database initialization error:', error);
+    throw error;
   }
-  return incomes;
-}
+};
 
-// Financial Summary
-export async function getFinancialSummary(startDate?: string, endDate?: string): Promise<{
-  totalExpenses: number;
-  totalIncome: number;
-  balance: number;
-}> {
-  let expenses: Expense[] = [];
-  let incomes: Income[] = [];
-
-  if (startDate && endDate) {
-    expenses = await getExpensesByDateRange(startDate, endDate);
-    incomes = await getIncomesByDateRange(startDate, endDate);
-  } else {
-    expenses = await getExpenses();
-    incomes = await getIncomes();
+// Transaction functions
+export const getTransactions = async (): Promise<(Expense | Income)[]> => {
+  try {
+    const db = await initDB();
+    return await db.getAll('transactions');
+  } catch (error) {
+    console.error('Error getting transactions:', error);
+    return [];
   }
+};
 
-  const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const totalIncome = incomes.reduce((sum, income) => sum + income.amount, 0);
-  const balance = totalIncome - totalExpenses;
+export const addTransaction = async (transaction: Expense | Income): Promise<void> => {
+  try {
+    const db = await initDB();
+    await db.add('transactions', transaction);
+    
+    // Batch multiple events together with a consistent order
+    dbEvents.broadcast([
+      DatabaseEvent.TRANSACTION_ADDED,
+      DatabaseEvent.BALANCE_UPDATED,
+      DatabaseEvent.TRANSACTION_LIST_REFRESH,
+      DatabaseEvent.UI_REFRESH_NEEDED
+    ], transaction);
+  } catch (error) {
+    console.error('Error adding transaction:', error);
+    throw error;
+  }
+};
 
-  return { totalExpenses, totalIncome, balance };
-}
+export const updateTransaction = async (transaction: Expense | Income): Promise<void> => {
+  try {
+    const db = await initDB();
+    await db.put('transactions', transaction);
+    
+    // Batch multiple events together with a consistent order
+    dbEvents.broadcast([
+      DatabaseEvent.TRANSACTION_UPDATED,
+      DatabaseEvent.BALANCE_UPDATED,
+      DatabaseEvent.TRANSACTION_LIST_REFRESH,
+      DatabaseEvent.UI_REFRESH_NEEDED
+    ], transaction);
+  } catch (error) {
+    console.error('Error updating transaction:', error);
+    throw error;
+  }
+};
 
-// Update Transaction (for both Expense and Income)
-export async function updateTransaction(transaction: Expense | Income) {
-  const db = await getDB();
-  const storeName = transaction.type === 'expense' ? EXPENSES_STORE : INCOMES_STORE;
-  await db.put(storeName, transaction);
-}
+export const deleteTransaction = async (id: string): Promise<void> => {
+  try {
+    const db = await initDB();
+    await db.delete('transactions', id);
+    
+    // Batch multiple events together with a consistent order
+    dbEvents.broadcast([
+      DatabaseEvent.TRANSACTION_DELETED,
+      DatabaseEvent.BALANCE_UPDATED,
+      DatabaseEvent.TRANSACTION_LIST_REFRESH,
+      DatabaseEvent.UI_REFRESH_NEEDED
+    ], { id });
+  } catch (error) {
+    console.error('Error deleting transaction:', error);
+    throw error;
+  }
+};
 
-// Delete Transaction (for both Expense and Income)
-export async function deleteTransaction(id: string, type: 'expense' | 'income') {
-  const db = await getDB();
-  const storeName = type === 'expense' ? EXPENSES_STORE : INCOMES_STORE;
-  await db.delete(storeName, id);
-}
+// Expense specific functions
+export const getExpenses = async (): Promise<Expense[]> => {
+  try {
+    const db = await initDB();
+    const transactions = await db.getAll('transactions');
+    return transactions.filter((transaction): transaction is Expense => transaction.type === 'expense');
+  } catch (error) {
+    console.error('Error getting expenses:', error);
+    return [];
+  }
+};
+
+export const getExpense = async (id: string): Promise<Expense | null> => {
+  try {
+    const db = await initDB();
+    const transaction = await db.get('transactions', id);
+    if (transaction && transaction.type === 'expense') {
+      return transaction as Expense;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting expense:', error);
+    return null;
+  }
+};
+
+export const addExpense = async (expense: Expense): Promise<void> => {
+  try {
+    await addTransaction(expense);
+  } catch (error) {
+    console.error('Error adding expense:', error);
+    throw error;
+  }
+};
+
+// Income specific functions
+export const getIncomes = async (): Promise<Income[]> => {
+  try {
+    const db = await initDB();
+    const transactions = await db.getAll('transactions');
+    return transactions.filter((transaction): transaction is Income => transaction.type === 'income');
+  } catch (error) {
+    console.error('Error getting incomes:', error);
+    return [];
+  }
+};
+
+export const getIncome = async (id: string): Promise<Income | null> => {
+  try {
+    const db = await initDB();
+    const transaction = await db.get('transactions', id);
+    if (transaction && transaction.type === 'income') {
+      return transaction as Income;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting income:', error);
+    return null;
+  }
+};
+
+export const addIncome = async (income: Income): Promise<void> => {
+  try {
+    await addTransaction(income);
+  } catch (error) {
+    console.error('Error adding income:', error);
+    throw error;
+  }
+};
+
+// Date range queries
+export const getTransactionsByDateRange = async (startDate: string, endDate: string): Promise<(Expense | Income)[]> => {
+  try {
+    const transactions = await getTransactions();
+    return transactions.filter(transaction => {
+      const transactionDate = new Date(transaction.date).getTime();
+      return transactionDate >= new Date(startDate).getTime() && 
+             transactionDate <= new Date(endDate).getTime();
+    });
+  } catch (error) {
+    console.error('Error getting transactions by date range:', error);
+    return [];
+  }
+};
+
+export const getExpensesByDateRange = async (startDate: string, endDate: string): Promise<Expense[]> => {
+  try {
+    const expenses = await getExpenses();
+    return expenses.filter(expense => {
+      const expenseDate = new Date(expense.date).getTime();
+      return expenseDate >= new Date(startDate).getTime() && 
+             expenseDate <= new Date(endDate).getTime();
+    });
+  } catch (error) {
+    console.error('Error getting expenses by date range:', error);
+    return [];
+  }
+};
+
+export const getIncomesByDateRange = async (startDate: string, endDate: string): Promise<Income[]> => {
+  try {
+    const incomes = await getIncomes();
+    return incomes.filter(income => {
+      const incomeDate = new Date(income.date).getTime();
+      return incomeDate >= new Date(startDate).getTime() && 
+             incomeDate <= new Date(endDate).getTime();
+    });
+  } catch (error) {
+    console.error('Error getting incomes by date range:', error);
+    return [];
+  }
+};
+
+// Financial summary
+export const getFinancialSummary = async (startDate?: string, endDate?: string): Promise<FinancialSummary> => {
+  try {
+    let expenses: Expense[];
+    let incomes: Income[];
+    
+    if (startDate && endDate) {
+      expenses = await getExpensesByDateRange(startDate, endDate);
+      incomes = await getIncomesByDateRange(startDate, endDate);
+    } else {
+      expenses = await getExpenses();
+      incomes = await getIncomes();
+    }
+    
+    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalIncome = incomes.reduce((sum, income) => sum + income.amount, 0);
+    
+    return {
+      totalExpenses,
+      totalIncome,
+      balance: totalIncome - totalExpenses
+    };
+  } catch (error) {
+    console.error('Error getting financial summary:', error);
+    return { totalExpenses: 0, totalIncome: 0, balance: 0 };
+  }
+};
+
+// User Categories
+export const getUserCategories = async (): Promise<UserCategories> => {
+  try {
+    const db = await initDB();
+    const userCategories = await db.get('userCategories', 'user-categories');
+    if (userCategories) {
+      return userCategories;
+    }
+    // Return default categories if none found
+    const defaultCategories = {
+      id: 'user-categories',
+      expenseCategories: [],
+      incomeCategories: [],
+      categoryColors: {},
+      categoryIcons: {}
+    };
+    
+    // Create default categories in DB
+    await db.put('userCategories', defaultCategories);
+    return defaultCategories;
+  } catch (error) {
+    console.error('Error getting user categories:', error);
+    return {
+      id: 'user-categories',
+      expenseCategories: [],
+      incomeCategories: [],
+      categoryColors: {},
+      categoryIcons: {}
+    };
+  }
+};
+
+export const saveUserCategories = async (userCategories: UserCategories): Promise<void> => {
+  try {
+    const db = await initDB();
+    // Make sure id is always set
+    const categories = {
+      ...userCategories,
+      id: 'user-categories' // Always use consistent ID
+    };
+    
+    // Add console logging to track category saving
+    console.log('Saving categories:', categories);
+    
+    // Ensure proper structure before saving
+    if (!categories.expenseCategories) categories.expenseCategories = [];
+    if (!categories.incomeCategories) categories.incomeCategories = [];
+    if (!categories.categoryColors) categories.categoryColors = {};
+    if (!categories.categoryIcons) categories.categoryIcons = {};
+    
+    await db.put('userCategories', categories);
+    console.log('Categories saved successfully');
+  } catch (error) {
+    console.error('Error saving user categories:', error);
+    throw error;
+  }
+};
 
 // Preferences
-export async function getPreferences(): Promise<Preference> {
+export const getPreferences = async (): Promise<Preference | null> => {
   try {
-    const db = await getDB();
-    const result = await db.get(PREFERENCES_STORE, 'user-preferences');
-    return result || {
-      id: 'user-preferences',
-      defaultCurrency: 'USD',
-      defaultExpenseCategory: 'other',
-      defaultIncomeCategory: 'other',
-      defaultTimeFrame: 'month',
-      categorizeAutomatically: true,
-    };
+    const db = await initDB();
+    return await db.get('preferences', 'user-preferences');
   } catch (error) {
     console.error('Error getting preferences:', error);
-    return {
-      id: 'user-preferences',
-      defaultCurrency: 'USD',
-      defaultExpenseCategory: 'other',
-      defaultIncomeCategory: 'other',
-      defaultTimeFrame: 'month',
-      categorizeAutomatically: true,
-    };
+    return null;
   }
-}
+};
 
-export async function savePreferences(preferences: Preference) {
+export const savePreferences = async (preferences: Preference): Promise<void> => {
   try {
-    // Make sure the ID is set
-    if (!preferences.id) {
-      preferences.id = 'user-preferences';
-    }
-    
-    const db = await getDB();
-    await db.put(PREFERENCES_STORE, preferences);
-    return true;
+    const db = await initDB();
+    // Ensure the id field is always set to the standard key
+    const preferencesWithId: Preference = {
+      ...preferences,
+      id: 'user-preferences'
+    };
+    await db.put('preferences', preferencesWithId);
   } catch (error) {
     console.error('Error saving preferences:', error);
-    return false;
+    throw error;
   }
-}
+};
 
-// Add function to get all transactions (for import/export functionality)
-export async function getTransactions(): Promise<Transaction[]> {
-  const db = await getDB();
-  const expenses = await db.getAll(EXPENSES_STORE);
-  const incomes = await db.getAll(INCOMES_STORE);
-  return [...expenses, ...incomes];
-}
-
-// Add function to add any transaction (for import functionality)
-export async function addTransaction(transaction: Transaction) {
-  const db = await getDB();
-  const storeName = transaction.type === 'expense' ? EXPENSES_STORE : INCOMES_STORE;
-  await db.add(storeName, transaction);
-}
-
-// Add functions for merchant notes functionality
-export async function getUniqueMerchants(): Promise<string[]> {
+// Merchant Notes
+export const getMerchantNotes = async (): Promise<MerchantNote[]> => {
   try {
-    const db = await getDB();
-    const expenses = await db.getAll(EXPENSES_STORE);
-    const incomes = await db.getAll(INCOMES_STORE);
+    const db = await initDB();
+    return await db.getAll('merchantNotes');
+  } catch (error) {
+    console.error('Error getting merchant notes:', error);
+    return [];
+  }
+};
+
+export const saveMerchantNote = async (merchantNote: MerchantNote): Promise<void> => {
+  try {
+    const db = await initDB();
+    await db.put('merchantNotes', merchantNote);
+  } catch (error) {
+    console.error('Error saving merchant note:', error);
+    throw error;
+  }
+};
+
+export const deleteMerchantNote = async (id: string): Promise<void> => {
+  try {
+    const db = await initDB();
+    await db.delete('merchantNotes', id);
+  } catch (error) {
+    console.error('Error deleting merchant note:', error);
+    throw error;
+  }
+};
+
+// Get unique merchants from transactions
+export const getUniqueMerchants = async (): Promise<string[]> => {
+  try {
+    const transactions = await getTransactions();
+    const merchantSet = new Set<string>();
     
-    // Extract all merchant names
-    const merchantNames = [
-      ...expenses.map(e => e.merchantName || ''),
-      ...incomes.map(i => i.merchantName || '')
-    ]
-    .filter(name => name.trim() !== '')
-    .sort();
+    transactions.forEach(transaction => {
+      if (transaction.merchantName) {
+        merchantSet.add(transaction.merchantName);
+      }
+    });
     
-    // Remove duplicates
-    return [...new Set(merchantNames)];
+    return Array.from(merchantSet).sort();
   } catch (error) {
     console.error('Error getting unique merchants:', error);
     return [];
   }
-}
+};
 
-export async function applyMerchantNotesToTransactions(
-  merchantName: string,
-  category: string,
-  notes: string
-): Promise<number> {
+// Apply merchant notes to all matching transactions
+export const applyMerchantNotesToTransactions = async (): Promise<number> => {
   try {
-    const db = await getDB();
+    const merchantNotes = await getMerchantNotes();
+    const transactions = await getTransactions();
     let updatedCount = 0;
     
-    // Apply to expenses
-    const expenses = await db.getAll(EXPENSES_STORE);
-    const matchingExpenses = expenses.filter(e => 
-      e.merchantName === merchantName && 
-      (!e.category || e.category === 'other') &&
-      (!e.notes || e.notes.trim() === '')
-    );
-    
-    for (const expense of matchingExpenses) {
-      const updatedExpense = {
-        ...expense,
-        category: category as any || expense.category,
-        notes: notes || expense.notes
-      };
-      await db.put(EXPENSES_STORE, updatedExpense);
-      updatedCount++;
-    }
-    
-    // Apply to incomes
-    const incomes = await db.getAll(INCOMES_STORE);
-    const matchingIncomes = incomes.filter(i => 
-      i.merchantName === merchantName && 
-      (!i.category || i.category === 'other') &&
-      (!i.notes || i.notes.trim() === '')
-    );
-    
-    for (const income of matchingIncomes) {
-      const updatedIncome = {
-        ...income,
-        category: category as any || income.category,
-        notes: notes || income.notes
-      };
-      await db.put(INCOMES_STORE, updatedIncome);
-      updatedCount++;
+    for (const transaction of transactions) {
+      for (const note of merchantNotes) {
+        try {
+          const pattern = new RegExp(note.merchantPattern, 'i');
+          if (pattern.test(transaction.merchantName)) {
+            let updatedTransaction = { ...transaction };
+            
+            // Update notes if provided
+            if (note.notes) {
+              updatedTransaction.notes = note.notes;
+            }
+            
+            // Update category if provided - ensure type safety
+            if (note.categoryOverride) {
+              if (transaction.type === 'expense') {
+                // Cast to Expense and set proper expense category type
+                (updatedTransaction as Expense).category = note.categoryOverride as ExpenseCategory;
+              } else {
+                // Cast to Income and set proper income category type
+                (updatedTransaction as Income).category = note.categoryOverride as IncomeCategory;
+              }
+            }
+            
+            await updateTransaction(updatedTransaction);
+            updatedCount++;
+            break; // Apply only the first matching pattern
+          }
+        } catch (err) {
+          console.error(`Error applying merchant note pattern ${note.merchantPattern}:`, err);
+        }
+      }
     }
     
     return updatedCount;
@@ -281,41 +498,16 @@ export async function applyMerchantNotesToTransactions(
     console.error('Error applying merchant notes to transactions:', error);
     return 0;
   }
-}
+};
 
-// Add functions for user categories
-export async function getUserCategories(): Promise<UserCategories> {
+// Add this function to get parser rules
+export const getParserRules = async (): Promise<any[]> => {
   try {
-    const db = await getDB();
-    const result = await db.get(USER_CATEGORIES_STORE, 'user-categories');
-    return result || { expenseCategories: [], incomeCategories: [] };
+    const db = await initDB();
+    const smsParserRules = await db.getAll('smsParserRules');
+    return smsParserRules || [];
   } catch (error) {
-    console.error('Error getting user categories:', error);
-    return { expenseCategories: [], incomeCategories: [] };
+    console.error('Error getting parser rules:', error);
+    return [];
   }
-}
-
-export async function saveUserCategories(categories: UserCategories): Promise<boolean> {
-  try {
-    const db = await getDB();
-    const existingCategories = await getUserCategories();
-    
-    // Fix: Properly merge category colors
-    const updatedCategories = {
-      id: 'user-categories',
-      expenseCategories: categories.expenseCategories || existingCategories.expenseCategories || [],
-      incomeCategories: categories.incomeCategories || existingCategories.incomeCategories || [],
-      // Make sure we keep the existing colors and add the new ones
-      categoryColors: {
-        ...(existingCategories.categoryColors || {}),
-        ...(categories.categoryColors || {})
-      }
-    };
-    
-    await db.put(USER_CATEGORIES_STORE, updatedCategories);
-    return true;
-  } catch (error) {
-    console.error('Error saving user categories:', error);
-    return false;
-  }
-}
+};

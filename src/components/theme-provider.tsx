@@ -29,14 +29,19 @@ export function ThemeProvider({
   storageKey = "ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = React.useState<Theme>(
-    () => {
-      if (typeof window !== "undefined") {
-        return (localStorage.getItem(storageKey) as Theme) || defaultTheme
+  // The useState hook must be called inside the function component body
+  const [theme, setTheme] = React.useState<Theme>(defaultTheme)
+  
+  // We'll move the localStorage check to useEffect to avoid issues
+  React.useEffect(() => {
+    // Only access localStorage after component mounts (in useEffect)
+    if (typeof window !== "undefined") {
+      const savedTheme = localStorage.getItem(storageKey) as Theme
+      if (savedTheme) {
+        setTheme(savedTheme)
       }
-      return defaultTheme
     }
-  )
+  }, [storageKey])
 
   React.useEffect(() => {
     const root = window.document.documentElement
@@ -55,13 +60,13 @@ export function ThemeProvider({
     root.classList.add(theme)
   }, [theme])
 
-  const value = {
+  const value = React.useMemo(() => ({
     theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
+    setTheme: (newTheme: Theme) => {
+      localStorage.setItem(storageKey, newTheme)
+      setTheme(newTheme)
     },
-  }
+  }), [theme, storageKey])
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>

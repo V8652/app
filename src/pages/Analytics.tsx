@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Layout from '@/components/Layout';
+import { Layout } from '@/components/Layout';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,8 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { DateRange as DateRangeType } from 'react-day-picker';
 import { cn } from '@/lib/utils';
-
-// Default category colors for charts with more vibrant colors
+import { formatCurrency } from '@/lib/utils/formatCurrency';
 const DEFAULT_CATEGORY_COLORS: Record<string, string> = {
   groceries: '#38b000',
   utilities: '#3a86ff',
@@ -32,13 +30,11 @@ const DEFAULT_CATEGORY_COLORS: Record<string, string> = {
   education: '#fb8500',
   subscriptions: '#7209b7',
   other: '#6c757d',
-  // Income categories
   salary: '#2a9d8f',
   freelance: '#e9c46a',
   investment: '#f4a261',
   gift: '#e76f51',
   refund: '#264653',
-  // Add more categories with colors as needed
   snacks: '#ff9500',
   'home-expenses': '#4a6fa5',
   personal: '#9b5de5',
@@ -47,7 +43,6 @@ const DEFAULT_CATEGORY_COLORS: Record<string, string> = {
   'utilities/hardware': '#f15bb5',
   'dmart/glossary': '#ff5100'
 };
-
 type TimeframeOption = '30days' | '90days' | '6months' | '12months' | 'custom';
 const Analytics = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -61,11 +56,9 @@ const Analytics = () => {
   });
   const [showIncome, setShowIncome] = useState(false);
   const [userCategoryColors, setUserCategoryColors] = useState<Record<string, string>>({});
-  
   useEffect(() => {
     loadData();
   }, []);
-  
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -73,8 +66,6 @@ const Analytics = () => {
       const incomesResult = await getIncomes();
       setExpenses(expensesResult);
       setIncomes(incomesResult);
-      
-      // Load custom category colors
       const userCategories = await getUserCategories();
       if (userCategories.categoryColors) {
         setUserCategoryColors(userCategories.categoryColors);
@@ -85,18 +76,12 @@ const Analytics = () => {
       setIsLoading(false);
     }
   };
-  
-  // Get color for a category (use custom color if available, otherwise fall back to default)
   const getCategoryColor = (category: string): string => {
     return userCategoryColors[category] || DEFAULT_CATEGORY_COLORS[category] || DEFAULT_CATEGORY_COLORS.other;
   };
-
-  // Handle timeframe changes
   const handleTimeframeChange = (value: string) => {
     const tf = value as TimeframeOption;
     setTimeframe(tf);
-
-    // If not custom, set the date range automatically
     if (tf !== 'custom') {
       const now = new Date();
       let from: Date;
@@ -122,16 +107,13 @@ const Analytics = () => {
       });
     }
   };
-
-  // Filter transactions based on current dateRange
   const filteredTransactions = useMemo(() => {
     if (!dateRange?.from) return {
       expenses: [],
       incomes: []
     };
     const from = dateRange.from;
-    const to = dateRange.to ? addDays(dateRange.to, 1) : new Date(); // Include end date
-
+    const to = dateRange.to ? addDays(dateRange.to, 1) : new Date();
     const filteredExpenses = expenses.filter(expense => {
       const expenseDate = new Date(expense.date);
       return expenseDate >= from && expenseDate <= to;
@@ -145,8 +127,6 @@ const Analytics = () => {
       incomes: filteredIncomes
     };
   }, [expenses, incomes, dateRange]);
-
-  // Category data for pie chart
   const categoryData = useMemo(() => {
     const categories = new Map<string, number>();
     if (showIncome) {
@@ -166,20 +146,14 @@ const Analytics = () => {
       color: getCategoryColor(category)
     })).sort((a, b) => b.total - a.total);
   }, [filteredTransactions, showIncome, userCategoryColors]);
-
-  // Monthly data for trend charts
   const monthlyData = useMemo(() => {
     if (!dateRange?.from) return [];
-
-    // Determine the number of months to show based on the date range
     let numMonths = 1;
     if (dateRange.to) {
       const diffTime = Math.abs(dateRange.to.getTime() - dateRange.from.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       numMonths = Math.max(1, Math.ceil(diffDays / 30));
     }
-
-    // Create a map of months
     const months = new Map<string, {
       month: string;
       total: number;
@@ -187,8 +161,6 @@ const Analytics = () => {
       expense: number;
       [key: string]: any;
     }>();
-
-    // Initialize months map with empty data
     for (let i = 0; i < numMonths; i++) {
       const date = subMonths(dateRange.to || new Date(), i);
       const monthKey = format(date, 'MMM yyyy');
@@ -209,7 +181,6 @@ const Analytics = () => {
         education: 0,
         subscriptions: 0,
         other: 0,
-        // Income categories
         salary: 0,
         freelance: 0,
         investment: 0,
@@ -217,15 +188,13 @@ const Analytics = () => {
         refund: 0
       });
     }
-
-    // Populate months map with expense and income data
     filteredTransactions.expenses.forEach(expense => {
       const date = new Date(expense.date);
       const monthKey = format(date, 'MMM yyyy');
       if (months.has(monthKey)) {
         const monthData = months.get(monthKey)!;
         monthData.expense += expense.amount;
-        monthData.total -= expense.amount; // Expenses reduce total
+        monthData.total -= expense.amount;
         monthData[expense.category] = (monthData[expense.category] || 0) + expense.amount;
       }
     });
@@ -235,34 +204,19 @@ const Analytics = () => {
       if (months.has(monthKey)) {
         const monthData = months.get(monthKey)!;
         monthData.income += income.amount;
-        monthData.total += income.amount; // Income increases total
+        monthData.total += income.amount;
         monthData[income.category] = (monthData[income.category] || 0) + income.amount;
       }
     });
-
-    // Convert map to array and sort by date
     return Array.from(months.values()).sort((a, b) => {
       const dateA = new Date(a.month);
       const dateB = new Date(b.month);
       return dateA.getTime() - dateB.getTime();
     });
   }, [filteredTransactions, dateRange]);
-
-  // Top spending/income categories
   const topCategories = useMemo(() => {
     return categoryData.slice(0, 5);
   }, [categoryData]);
-
-  // Format currency with ₹ symbol for INR
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
-  // Custom tooltip for charts
   const renderTooltip = ({
     active,
     payload
@@ -271,14 +225,12 @@ const Analytics = () => {
       return <div className="bg-popover text-popover-foreground p-3 rounded-md shadow-md">
           {payload.map((entry: any, index: number) => <p key={index} className="text-sm">
               <span className="font-medium capitalize">{entry.name === 'total' ? 'Net' : entry.name === 'expense' ? 'Expense' : entry.name === 'income' ? 'Income' : entry.name}: </span>
-              <span>{formatCurrency(entry.value)}</span>
+              <span>{formatCurrency(entry.value, 'INR')}</span>
             </p>)}
         </div>;
     }
     return null;
   };
-
-  // Total amounts
   const totalAmounts = useMemo(() => {
     const income = filteredTransactions.incomes.reduce((sum, income) => sum + income.amount, 0);
     const expense = filteredTransactions.expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -288,27 +240,11 @@ const Analytics = () => {
       net: income - expense
     };
   }, [filteredTransactions]);
-  
   return <Layout>
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <motion.div initial={{
-          opacity: 0,
-          y: -10
-        }} animate={{
-          opacity: 1,
-          y: 0
-        }} transition={{
-          duration: 0.5
-        }}>
-            <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
-            <p className="text-muted-foreground mt-1">
-              Visualize and analyze your financial patterns
-            </p>
-          </motion.div>
-        </header>
+      <div className="max-w-7xl mx-auto px-0">
+        <header className="mb-4"></header>
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
           <motion.div initial={{
           opacity: 0,
           x: -10
@@ -318,16 +254,16 @@ const Analytics = () => {
         }} transition={{
           duration: 0.5,
           delay: 0.1
-        }} className="flex flex-col sm:flex-row gap-2 sm:items-center">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">
-                {showIncome ? 'Income:' : 'Expenses:'} <span className="text-primary">{showIncome ? formatCurrency(totalAmounts.income) : formatCurrency(totalAmounts.expense)}</span>
+        }} className="flex flex-col sm:flex-row gap-1 sm:items-center">
+            <div className="flex flex-col gap-0.5 px-2 my-0 py-0">
+              <h2 className="text-lg font-semibold leading-tight">
+                {showIncome ? 'Income:' : 'Expenses:'} <span className="text-primary">{showIncome ? formatCurrency(totalAmounts.income, 'INR') : formatCurrency(totalAmounts.expense, 'INR')}</span>
               </h2>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="ml-1">
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className="ml-1 text-xs py-0.5 px-1.5">
                   {showIncome ? `${filteredTransactions.incomes.length} transactions` : `${filteredTransactions.expenses.length} transactions`}
                 </Badge>
-                <Button variant="ghost" size="sm" onClick={() => setShowIncome(!showIncome)} className="text-xs h-7 px-2">
+                <Button variant="ghost" size="sm" onClick={() => setShowIncome(!showIncome)} className="text-xs h-6 px-1.5">
                   {showIncome ? 'Show Expenses' : 'Show Income'}
                 </Button>
               </div>
@@ -343,12 +279,10 @@ const Analytics = () => {
         }} transition={{
           duration: 0.5,
           delay: 0.1
-        }} className="flex flex-col sm:flex-row items-center gap-2">
+        }} className="flex flex-col sm:flex-row items-center gap-1">
             <Select value={timeframe} onValueChange={handleTimeframeChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select Timeframe" />
-              </SelectTrigger>
-              <SelectContent>
+              <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue placeholder="Select Timeframe" /></SelectTrigger>
+              <SelectContent position="popper" className="w-[140px] text-xs">
                 <SelectItem value="30days">Last 30 Days</SelectItem>
                 <SelectItem value="90days">Last 90 Days</SelectItem>
                 <SelectItem value="6months">Last 6 Months</SelectItem>
@@ -356,30 +290,23 @@ const Analytics = () => {
                 <SelectItem value="custom">Custom Date Range</SelectItem>
               </SelectContent>
             </Select>
-            
-            {timeframe === 'custom' && <div className="grid gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button id="date" variant={"outline"} className={cn("w-[240px] justify-start text-left font-normal")}>
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange?.from ? dateRange.to ? <>
-                            {format(dateRange.from, "LLL dd, y")} -{" "}
-                            {format(dateRange.to, "LLL dd, y")}
-                          </> : format(dateRange.from, "LLL dd, y") : <span>Pick a date range</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
-                  </PopoverContent>
-                </Popover>
-              </div>}
+            {timeframe === 'custom' && <div className="grid gap-1"><Popover><PopoverTrigger asChild>
+              <Button id="date" variant={"outline"} className={cn("w-[180px] h-8 justify-start text-left font-normal text-xs")}> 
+                <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                {dateRange?.from ? dateRange.to ? <>
+                      {format(dateRange.from, "LLL dd, y")} -{" "}
+                      {format(dateRange.to, "LLL dd, y")}
+                    </> : format(dateRange.from, "LLL dd, y") : <span>Pick a date range</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
+            </PopoverContent></Popover></div>}
           </motion.div>
         </div>
         
-        
-
-        {isLoading ? <div className="flex justify-center items-center h-96">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        {isLoading ? <div className="flex justify-center items-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div> : showIncome && filteredTransactions.incomes.length === 0 || !showIncome && filteredTransactions.expenses.length === 0 ? <motion.div initial={{
         opacity: 0,
         y: 20
@@ -389,14 +316,13 @@ const Analytics = () => {
       }} transition={{
         duration: 0.5,
         delay: 0.2
-      }} className="text-center py-24 bg-muted/20 rounded-lg">
-            <Activity className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
-            <h3 className="text-xl font-medium mb-2">No {showIncome ? 'Income' : 'Expense'} Data</h3>
-            <p className="text-muted-foreground">
+      }} className="text-center py-16 bg-muted/20 rounded-lg text-sm">
+            <Activity className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" />
+            <h3 className="text-lg font-medium mb-1">No {showIncome ? 'Income' : 'Expense'} Data</h3>
+            <p className="text-muted-foreground text-xs">
               There are no {showIncome ? 'income entries' : 'expenses'} recorded for the selected timeframe.
             </p>
-          </motion.div> : <div className="space-y-8">
-            {/* Top Categories */}
+          </motion.div> : <div className="space-y-4 px-0">
             <motion.div initial={{
           opacity: 0,
           y: 20
@@ -407,8 +333,8 @@ const Analytics = () => {
           duration: 0.5,
           delay: 0.2
         }}>
-              <h3 className="text-lg font-medium mb-4">Top {showIncome ? 'Income' : 'Spending'} Categories</h3>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <h3 className="text-base font-medium mb-2 px-2">Top {showIncome ? 'Income' : 'Spending'} Categories</h3>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
                 {topCategories.map((category, index) => <motion.div key={category.category} initial={{
               opacity: 0,
               y: 10
@@ -419,13 +345,11 @@ const Analytics = () => {
               duration: 0.3,
               delay: 0.3 + index * 0.1
             }}>
-                    <Card className="p-4 h-full hover:shadow-md transition-shadow">
-                      <div className="w-4 h-4 rounded-full mb-2" style={{
-                  backgroundColor: category.color
-                }}></div>
-                      <p className="text-sm font-medium capitalize">{category.category.replace(/-/g, ' ')}</p>
-                      <p className="text-2xl font-bold">{formatCurrency(category.total)}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
+                    <Card className="p-2 h-full hover:shadow-md transition-shadow">
+                      <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: category.color }}></div>
+                      <p className="text-xs font-medium capitalize">{category.category.replace(/-/g, ' ')}</p>
+                      <p className="text-lg font-bold">{formatCurrency(category.total, 'INR')}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
                         {(category.total / (showIncome ? totalAmounts.income : totalAmounts.expense) * 100).toFixed(1)}% of total
                       </p>
                     </Card>
@@ -433,7 +357,6 @@ const Analytics = () => {
               </div>
             </motion.div>
 
-            {/* Charts */}
             <motion.div initial={{
           opacity: 0,
           y: 20
@@ -445,37 +368,34 @@ const Analytics = () => {
           delay: 0.4
         }}>
               <Tabs value={activeChartTab} onValueChange={setActiveChartTab} className="w-full">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium">{showIncome ? 'Income' : 'Expense'} Analysis</h3>
-                  <TabsList>
-                    <TabsTrigger value="category" className="flex items-center gap-1">
-                      <PieChartIcon className="h-4 w-4" />
+                <div className="flex justify-between items-center mb-2 py-0 my-0">
+                  <h3 className="text-base font-medium px-2">{showIncome ? 'Income' : 'Expense'} Analysis</h3>
+                  <TabsList className="py-0 my-0 h-7 text-xs gap-1">
+                    <TabsTrigger value="category" className="flex items-center gap-1 px-2 py-1 h-7">
+                      <PieChartIcon className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Categories</span>
                     </TabsTrigger>
-                    <TabsTrigger value="trend" className="flex items-center gap-1">
-                      <TrendingUp className="h-4 w-4" />
+                    <TabsTrigger value="trend" className="flex items-center gap-1 px-2 py-1 h-7">
+                      <TrendingUp className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Trends</span>
                     </TabsTrigger>
-                    <TabsTrigger value="comparison" className="flex items-center gap-1">
-                      <BarChart3 className="h-4 w-4" />
+                    <TabsTrigger value="comparison" className="flex items-center gap-1 px-2 py-1 h-7">
+                      <BarChart3 className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Comparison</span>
                     </TabsTrigger>
                   </TabsList>
                 </div>
                 
                 <TabsContent value="category" className="mt-0">
-                  <Card className="p-4">
-                    <div className="h-96">
+                  <Card className="p-2 px-0 py-2">
+                    <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={categoryData} dataKey="total" nameKey="category" cx="50%" cy="50%" outerRadius={130} innerRadius={60} paddingAngle={2} label={({
-                        name,
-                        percent
-                      }) => `${name.replace(/-/g, ' ')} (${(percent * 100).toFixed(0)}%)`}>
+                          <Pie data={categoryData} dataKey="total" nameKey="category" cx="50%" cy="50%" outerRadius={80} innerRadius={38} paddingAngle={2} label={({ name, percent }) => `${name.replace(/-/g, ' ')} (${(percent * 100).toFixed(0)}%)`} labelLine={false}>
                             {categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={1} />)}
                           </Pie>
                           <Tooltip content={renderTooltip} />
-                          <Legend layout="horizontal" verticalAlign="bottom" align="center" formatter={value => <span className="capitalize">{value.replace(/-/g, ' ')}</span>} />
+                          <Legend layout="horizontal" verticalAlign="bottom" align="center" iconSize={10} wrapperStyle={{ paddingTop: '8px', fontSize: '11px' }} formatter={value => <span className="capitalize">{value.replace(/-/g, ' ')}</span>} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -483,43 +403,16 @@ const Analytics = () => {
                 </TabsContent>
                 
                 <TabsContent value="trend" className="mt-0">
-                  <Card className="p-4">
-                    <div className="h-96">
+                  <Card className="p-2">
+                    <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={monthlyData} margin={{
-                      top: 20,
-                      right: 30,
-                      left: 20,
-                      bottom: 10
-                    }}>
-                          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                          <XAxis dataKey="month" tick={{
-                        fill: '#888'
-                      }} tickLine={{
-                        stroke: '#888'
-                      }} />
-                          <YAxis tickFormatter={value => `₹${Math.abs(value)}`} tick={{
-                        fill: '#888'
-                      }} tickLine={{
-                        stroke: '#888'
-                      }} />
+                        <LineChart data={monthlyData} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                          <XAxis dataKey="month" tick={{ fill: '#888', fontSize: '11px' }} tickLine={{ stroke: '#888' }} height={30} padding={{ left: 5, right: 5 }} />
+                          <YAxis tickFormatter={value => `₹${Math.abs(value)}`} tick={{ fill: '#888', fontSize: '11px' }} tickLine={{ stroke: '#888' }} width={40} />
                           <Tooltip content={renderTooltip} />
-                          <Legend />
-                          {showIncome ? <Line type="monotone" dataKey="income" name="Income" stroke="#2a9d8f" strokeWidth={3} dot={{
-                        r: 4,
-                        fill: '#2a9d8f',
-                        strokeWidth: 1,
-                        stroke: '#fff'
-                      }} activeDot={{
-                        r: 6
-                      }} /> : <Line type="monotone" dataKey="expense" name="Expense" stroke="#e63946" strokeWidth={3} dot={{
-                        r: 4,
-                        fill: '#e63946',
-                        strokeWidth: 1,
-                        stroke: '#fff'
-                      }} activeDot={{
-                        r: 6
-                      }} />}
+                          <Legend wrapperStyle={{ paddingTop: '4px', fontSize: '11px' }} />
+                          {showIncome ? <Line type="monotone" dataKey="income" name="Income" stroke="#2a9d8f" strokeWidth={2} dot={{ r: 3, fill: '#2a9d8f', strokeWidth: 1, stroke: '#fff' }} activeDot={{ r: 4 }} /> : <Line type="monotone" dataKey="expense" name="Expense" stroke="#e63946" strokeWidth={2} dot={{ r: 3, fill: '#e63946', strokeWidth: 1, stroke: '#fff' }} activeDot={{ r: 4 }} />}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -527,52 +420,22 @@ const Analytics = () => {
                 </TabsContent>
                 
                 <TabsContent value="comparison" className="mt-0">
-                  <Card className="p-4">
-                    <div className="h-96">
+                  <Card className="p-2">
+                    <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={monthlyData} margin={{
-                      top: 20,
-                      right: 30,
-                      left: 20,
-                      bottom: 70
-                    }} barSize={36}>
-                          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                          <XAxis dataKey="month" angle={-45} textAnchor="end" height={70} tick={{
-                        fill: '#888'
-                      }} tickLine={{
-                        stroke: '#888'
-                      }} />
-                          <YAxis tickFormatter={value => `₹${Math.abs(value)}`} tick={{
-                        fill: '#888'
-                      }} tickLine={{
-                        stroke: '#888'
-                      }} />
+                        <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 10, bottom: 40 }} barSize={18}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                          <XAxis dataKey="month" angle={-45} textAnchor="end" height={40} tick={{ fill: '#888', fontSize: '11px' }} tickLine={{ stroke: '#888' }} padding={{ left: 5, right: 5 }} />
+                          <YAxis tickFormatter={value => `₹${Math.abs(value)}`} tick={{ fill: '#888', fontSize: '11px' }} tickLine={{ stroke: '#888' }} width={40} />
                           <Tooltip content={renderTooltip} />
-                          <Legend verticalAlign="top" wrapperStyle={{
-                        lineHeight: '40px'
-                      }} formatter={value => <span className="capitalize">{value.replace(/-/g, ' ')}</span>} />
-                          {Object.keys(monthlyData[0] || {})
-                            .filter(key => {
-                              // Filter categories based on whether we're showing income or expenses
-                              if (showIncome) {
-                                return ['salary', 'freelance', 'investment', 'gift', 'refund', 'other'].includes(key) && 
-                                  monthlyData.some(data => data[key] > 0);
-                              } else {
-                                return !['salary', 'freelance', 'investment', 'gift', 'refund', 'income', 'expense', 'total', 'month'].includes(key) && 
-                                  monthlyData.some(data => data[key] > 0);
-                              }
-                            })
-                            .slice(0, 5) // Show top 5 categories to avoid clutter
-                            .map((category, index) => (
-                              <Bar 
-                                key={`bar-${index}`} 
-                                dataKey={category} 
-                                name={category} 
-                                stackId="a" 
-                                fill={getCategoryColor(category)} 
-                              />
-                            ))
-                          }
+                          <Legend verticalAlign="top" wrapperStyle={{ lineHeight: '24px', paddingBottom: '4px', fontSize: '11px' }} formatter={value => <span className="capitalize">{value.replace(/-/g, ' ')}</span>} />
+                          {Object.keys(monthlyData[0] || {}).filter(key => {
+                        if (showIncome) {
+                          return ['salary', 'freelance', 'investment', 'gift', 'refund', 'other'].includes(key) && monthlyData.some(data => data[key] > 0);
+                        } else {
+                          return !['salary', 'freelance', 'investment', 'gift', 'refund', 'income', 'expense', 'total', 'month'].includes(key) && monthlyData.some(data => data[key] > 0);
+                        }
+                      }).slice(0, 5).map((category, index) => <Bar key={`bar-${index}`} dataKey={category} name={category} stackId="a" fill={getCategoryColor(category)} />)}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -581,7 +444,6 @@ const Analytics = () => {
               </Tabs>
             </motion.div>
             
-            {/* Monthly Breakdown */}
             <motion.div initial={{
           opacity: 0,
           y: 20
@@ -592,31 +454,18 @@ const Analytics = () => {
           duration: 0.5,
           delay: 0.6
         }}>
-              <h3 className="text-lg font-medium mb-4">Income vs Expenses</h3>
-              <Card className="p-4">
-                <div className="h-80">
+              <h3 className="text-base font-medium mb-2 px-2 py-0 my-0">Income vs Expenses</h3>
+              <Card className="p-2">
+                <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={monthlyData} margin={{
-                  top: 20,
-                  right: 30,
-                  left: 20,
-                  bottom: 10
-                }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis dataKey="month" tick={{
-                    fill: '#888'
-                  }} tickLine={{
-                    stroke: '#888'
-                  }} />
-                      <YAxis tickFormatter={value => `₹${Math.abs(value)}`} tick={{
-                    fill: '#888'
-                  }} tickLine={{
-                    stroke: '#888'
-                  }} />
+                    <AreaChart data={monthlyData} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                      <XAxis dataKey="month" tick={{ fill: '#888', fontSize: '11px' }} tickLine={{ stroke: '#888' }} padding={{ left: 5, right: 5 }} height={24} />
+                      <YAxis tickFormatter={value => `₹${Math.abs(value)}`} tick={{ fill: '#888', fontSize: '11px' }} tickLine={{ stroke: '#888' }} width={40} />
                       <Tooltip content={renderTooltip} />
-                      <Legend />
-                      <Area type="monotone" dataKey="income" name="Income" stroke="#2a9d8f" fill="#2a9d8f" fillOpacity={0.2} />
-                      <Area type="monotone" dataKey="expense" name="Expense" stroke="#e63946" fill="#e63946" fillOpacity={0.2} />
+                      <Legend wrapperStyle={{ paddingTop: '4px', fontSize: '11px' }} />
+                      <Area type="monotone" dataKey="income" name="Income" stroke="#2a9d8f" fill="#2a9d8f" fillOpacity={0.18} />
+                      <Area type="monotone" dataKey="expense" name="Expense" stroke="#e63946" fill="#e63946" fillOpacity={0.18} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

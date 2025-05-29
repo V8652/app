@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import SafeLayout from '@/components/SafeLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, ArrowUpRight, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
+import { Plus, ArrowUpRight, TrendingUp, TrendingDown, Wallet, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Expense, Income, DateRange } from '@/types';
 import { getExpenses, getExpensesByDateRange, getIncomes, getIncomesByDateRange, getFinancialSummary } from '@/lib/db';
@@ -16,11 +15,15 @@ import TransactionViews from '@/components/TransactionViews';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { addExpense, addIncome } from '@/lib/db';
 import { toast } from '@/hooks/use-toast';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
+import { format, startOfMonth, endOfWeek, startOfWeek, endOfMonth } from 'date-fns';
 import DateRangeSelector from '@/components/DateRangeSelector';
 import ExpenseEditForm from '@/components/ExpenseEditForm';
 import IncomeEditForm from '@/components/IncomeEditForm';
-import NetBalanceDisplay from '@/components/NetBalanceDisplay';
+import { batchEnrichTransactions } from '@/lib/transaction-enricher';
+import { useNavigate } from 'react-router-dom';
+import { useSmsScan } from '@/hooks/use-sms-scanner';
+import { Loader2 } from 'lucide-react';
+import TransactionDashboard from '@/components/TransactionDashboard';
 
 const Index = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -36,7 +39,12 @@ const Index = () => {
     totalIncome: 0,
     balance: 0
   });
-  const [transactionTab, setTransactionTab] = useState<'expenses' | 'income'>('expenses');
+  const [allTimeSummary, setAllTimeSummary] = useState({
+    totalExpenses: 0,
+    totalIncome: 0,
+    balance: 0
+  });
+  const [transactionTab, setTransactionTab] = useState<'expenses' | 'income' | 'all'>('all');
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date())
@@ -44,11 +52,15 @@ const Index = () => {
   const [showDateRangeSelector, setShowDateRangeSelector] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [selectedIncome, setSelectedIncome] = useState<Income | null>(null);
-
+  const [refreshKey, setRefreshKey] = useState(0);
+  const navigate = useNavigate();
+  const { isScanning, scanSms } = useSmsScan();
+  
   useEffect(() => {
     loadData();
-  }, [timeframe, dateRange]);
-
+    loadAllTimeData();
+  }, [timeframe, dateRange, refreshKey]);
+  
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -56,7 +68,6 @@ const Index = () => {
       let incomesResult: Income[];
       let startDate: string;
       let endDate: string;
-      
       if (timeframe === 'week') {
         startDate = startOfWeek(new Date()).toISOString();
         endDate = endOfWeek(new Date()).toISOString();
@@ -69,7 +80,9 @@ const Index = () => {
         incomesResult = await getIncomesByDateRange(startDate, endDate);
       } else if (timeframe === 'custom') {
         startDate = dateRange.from.toISOString();
-        endDate = dateRange.to.toISOString();
+        const inclusiveEnd = new Date(dateRange.to);
+        inclusiveEnd.setHours(23, 59, 59, 999);
+        endDate = inclusiveEnd.toISOString();
         expensesResult = await getExpensesByDateRange(startDate, endDate);
         incomesResult = await getIncomesByDateRange(startDate, endDate);
       } else {
@@ -77,15 +90,32 @@ const Index = () => {
         incomesResult = await getIncomes();
       }
       
-      const financialSummary = timeframe !== 'all' 
-        ? await getFinancialSummary(startDate!, endDate!) 
-        : await getFinancialSummary();
+      // Auto-enrich transactions with category and notes from merchant data
+      const allTransactions = [...expensesResult, ...incomesResult];
+      const enrichCount = await batchEnrichTransactions(allTransactions);
       
+      if (enrichCount > 0) {
+        console.log(`Auto-enriched ${enrichCount} transactions with merchant data`);
+        
+        // Reload data if any transactions were enriched
+        if (timeframe !== 'all') {
+          expensesResult = await getExpensesByDateRange(startDate!, endDate!);
+          incomesResult = await getIncomesByDateRange(startDate!, endDate!);
+        } else {
+          expensesResult = await getExpenses();
+          incomesResult = await getIncomes();
+        }
+        
+        toast({
+          title: 'Transactions Updated',
+          description: `${enrichCount} transactions were automatically updated with merchant data.`
+        });
+      }
+      
+      const financialSummary = timeframe !== 'all' ? await getFinancialSummary(startDate!, endDate!) : await getFinancialSummary();
       setSummary(financialSummary);
-      
       expensesResult.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       incomesResult.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
       setExpenses(expensesResult);
       setIncomes(incomesResult);
     } catch (error) {
@@ -93,390 +123,295 @@ const Index = () => {
       toast({
         title: 'Error Loading Data',
         description: 'Could not load your financial data. Please try again.',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     } finally {
       setIsLoading(false);
     }
   };
-
+  
+  const loadAllTimeData = async () => {
+    try {
+      const allTimeExpenses = await getExpenses();
+      const allTimeIncomes = await getIncomes();
+      const totalAllTimeExpenses = allTimeExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+      const totalAllTimeIncome = allTimeIncomes.reduce((sum, income) => sum + income.amount, 0);
+      const balance = totalAllTimeIncome - totalAllTimeExpenses;
+      setAllTimeSummary({
+        totalExpenses: totalAllTimeExpenses,
+        totalIncome: totalAllTimeIncome,
+        balance: balance
+      });
+    } catch (error) {
+      console.error('Error loading all-time data:', error);
+    }
+  };
+  
   const handleAddExpense = async (expense: Expense) => {
     try {
       await addExpense(expense);
       setIsAddExpenseOpen(false);
       toast({
         title: 'Expense Added',
-        description: 'Your expense has been successfully added.',
+        description: 'Your expense has been successfully added.'
       });
       loadData();
+      loadAllTimeData();
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Error adding expense:', error);
       toast({
         title: 'Error Adding Expense',
         description: 'Could not add your expense. Please try again.',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     }
   };
-
+  
   const handleAddIncome = async (income: Income) => {
     try {
       await addIncome(income);
       setIsAddIncomeOpen(false);
       toast({
         title: 'Income Added',
-        description: 'Your income has been successfully added.',
+        description: 'Your income has been successfully added.'
       });
       loadData();
+      loadAllTimeData();
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Error adding income:', error);
       toast({
         title: 'Error Adding Income',
         description: 'Could not add your income. Please try again.',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     }
   };
-
-  const handleExpenseClick = (expense: Expense) => {
+  
+  // Function for opening the add income dialog
+  const handleAddIncomeClick = () => {
+    setIsAddIncomeOpen(true);
+  };
+  
+  // Function for opening the add expense dialog
+  const handleAddExpenseClick = () => {
+    setIsAddExpenseOpen(true);
+  };
+  
+  // Function for handling clicks on existing expense items
+  const handleExpenseItemClick = (expense: Expense) => {
     setSelectedExpense(expense);
     setIsEditExpenseOpen(true);
   };
-
-  const handleIncomeClick = (income: Income) => {
+  
+  // Function for handling clicks on existing income items
+  const handleIncomeItemClick = (income: Income) => {
     setSelectedIncome(income);
     setIsEditIncomeOpen(true);
   };
-
+  
   const handleExpenseEditSave = () => {
     loadData();
+    loadAllTimeData();
     setIsEditExpenseOpen(false);
     setSelectedExpense(null);
+    setRefreshKey(prev => prev + 1);
   };
-
+  
   const handleIncomeEditSave = () => {
     loadData();
+    loadAllTimeData();
     setIsEditIncomeOpen(false);
     setSelectedIncome(null);
+    setRefreshKey(prev => prev + 1);
   };
-
+  
   const handleDateRangeChange = (range: DateRange) => {
     setDateRange(range);
     setTimeframe('custom');
   };
-
+  
+  // Direct SMS scanning functionality
+  const handleScanSmsClick = async () => {
+    try {
+      const newExpenses = await scanSms({
+        from: dateRange.from,
+        to: dateRange.to
+      });
+      
+      if (newExpenses.length > 0) {
+        // If new expenses were added, refresh the data
+        loadData();
+        loadAllTimeData();
+        setRefreshKey(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Error scanning SMS:', error);
+    }
+  };
+  
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0
     }).format(amount);
   };
-
-  return (
-    <SafeLayout>
+  
+  const handleTransactionChange = () => {
+    loadData();
+    loadAllTimeData();
+    setRefreshKey(prev => prev + 1);
+  };
+  
+  const AnimatedCurrencyValue = ({
+    amount
+  }: {
+    amount: number;
+  }) => {
+    const [prevAmount, setPrevAmount] = useState(amount);
+    const hasChanged = prevAmount !== amount;
+    useEffect(() => {
+      if (hasChanged) {
+        setTimeout(() => setPrevAmount(amount), 500);
+      }
+    }, [amount, hasChanged]);
+    return <motion.div key={amount} initial={hasChanged ? {
+      opacity: 0,
+      y: -20
+    } : false} animate={{
+      opacity: 1,
+      y: 0
+    }} className={hasChanged ? 'text-primary' : ''}>
+        {formatCurrency(amount)}
+      </motion.div>;
+  };
+  
+  return <SafeLayout>
       <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground mt-1">
-              Track and analyze your expenses and income
-            </p>
-          </motion.div>
-        </header>
-
-        <div className="mb-6">
-          <NetBalanceDisplay 
-            totalIncome={summary.totalIncome}
-            totalExpenses={summary.totalExpenses}
-            timeframe={timeframe === 'week' 
-              ? 'This week' 
-              : timeframe === 'month' 
-              ? 'This month' 
-              : timeframe === 'custom'
-              ? `${format(dateRange.from, 'dd MMM')} - ${format(dateRange.to, 'dd MMM')}`
-              : 'All time'}
-          />
-        </div>
-
-        <div className="flex items-center space-x-2 flex-wrap gap-y-2 mb-6">
-          {showDateRangeSelector ? (
-            <div className="flex items-center">
-              <DateRangeSelector 
-                value={dateRange}
-                onChange={handleDateRangeChange}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowDateRangeSelector(false)}
-                className="ml-2"
-              >
-                Hide
-              </Button>
+        {/* Combined Total Balance and Scan SMS */}
+        <div className="flex justify-between items-center mb-4 px-1 sm:px-3"> {/* Added flex container */}
+          <div className="flex flex-col my-2"> {/* Total Balance */}
+            <div className="text-lg font-medium mb-1">Total Balance</div>
+            <div className={`text-3xl font-bold ${allTimeSummary.balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              {isLoading ? <div className="h-9 w-24 bg-muted/50 rounded animate-pulse"></div> : <AnimatedCurrencyValue amount={allTimeSummary.balance} />}
             </div>
-          ) : (
-            <>
-              <Button
-                variant={timeframe === 'week' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTimeframe('week')}
-              >
-                Week
-              </Button>
-              <Button
-                variant={timeframe === 'month' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTimeframe('month')}
-              >
-                Month
-              </Button>
-              <Button
-                variant={timeframe === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTimeframe('all')}
-              >
-                All
-              </Button>
-              <Button
-                variant={timeframe === 'custom' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setShowDateRangeSelector(true)}
-              >
-                Custom
-              </Button>
-            </>
-          )}
+          </div>
+          {/* SMS Scan Button - moved here */}
+          <Button
+            onClick={handleScanSmsClick}
+            variant="outline"
+            size="sm"
+            className="gap-1 sms-scan-button ml-1"
+            disabled={isScanning}
+          >
+            {isScanning ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="sm:inline">Scanning...</span>
+              </>
+            ) : (
+              <>
+                <MessageSquare className="h-4 w-4" />
+                <span className="sm:inline">Scan SMS</span>
+              </>
+            )}
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="col-span-1"
-          >
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg font-medium">Total Balance</CardTitle>
-                <CardDescription>
-                  {timeframe === 'week' 
-                    ? 'This week' 
-                    : timeframe === 'month' 
-                    ? 'This month' 
-                    : timeframe === 'custom'
-                    ? `${format(dateRange.from, 'dd MMM')} - ${format(dateRange.to, 'dd MMM')}`
-                    : 'All time'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className={`text-3xl font-bold ${summary.balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {isLoading ? (
-                      <div className="h-9 w-24 bg-muted/50 rounded animate-pulse"></div>
-                    ) : (
-                      formatCurrency(summary.balance)
-                    )}
+        <div className="flex flex-col space-y-4 mb-2">
+          <div className="flex items-center justify-between mb-2 px-1 sm:px-3">
+            <div className="flex items-center space-x-1 flex-wrap gap-y-2 gap-x-1">
+              {showDateRangeSelector ? <div className="flex items-center">
+                  <DateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
+                  <Button variant="ghost" size="sm" onClick={() => setShowDateRangeSelector(false)} className="ml-1">
+                    Hide
+                  </Button>
+                </div> : <>
+                  <Button variant={timeframe === 'week' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('week')}>
+                    Week
+                  </Button>
+                  <Button variant={timeframe === 'month' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('month')}>
+                    Month
+                  </Button>
+                  <Button variant={timeframe === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('all')}>
+                    All
+                  </Button>
+                  <Button variant={timeframe === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setShowDateRangeSelector(true)}>
+                    Custom
+                  </Button>
+                </>}
+            </div>
+          </div>
+        </div>
+
+        {/* Removed Card component */}
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-2 px-1 sm:px-3"> {/* Adjusted padding */}
+          <motion.div initial={{
+          opacity: 0,
+          y: 20
+        }} animate={{
+          opacity: 1,
+          y: 0
+        }} transition={{
+          duration: 0.5,
+          delay: 0.1
+        }} key={refreshKey} className="col-span-1"> {/* Removed px-1 sm:px-3 */}
+            {/* Removed CardContent */}
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-3 items-center"> {/* Changed items-left to items-center */}
+                <div className="flex flex-col items-center cursor-pointer hover:bg-accent/50 rounded-lg p-2 transition-colors" onClick={handleAddIncomeClick}>
+                  <div className="flex items-center text-sm font-medium"> {/* Changed items-left to items-center */}
+                    <TrendingUp className="mr-1 h-4 w-4 text-green-500" />
+                    Income
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    Balance (Income - Expenses)
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4 pt-4">
-                    <div>
-                      <div className="flex items-center text-sm font-medium">
-                        <TrendingUp className="mr-1 h-4 w-4 text-green-500" />
-                        Income
-                      </div>
-                      <div className="text-lg font-semibold text-green-500">
-                        {formatCurrency(summary.totalIncome)}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <div className="flex items-center text-sm font-medium">
-                        <TrendingDown className="mr-1 h-4 w-4 text-red-500" />
-                        Expenses
-                      </div>
-                      <div className="text-lg font-semibold text-red-500">
-                        {formatCurrency(summary.totalExpenses)}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-2 pt-4">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full" 
-                      onClick={() => setIsAddExpenseOpen(true)}
-                    >
-                      <TrendingDown className="mr-2 h-4 w-4 text-red-500" />
-                      Add Expense
-                    </Button>
-                    
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full" 
-                      onClick={() => setIsAddIncomeOpen(true)}
-                    >
-                      <TrendingUp className="mr-2 h-4 w-4 text-green-500" />
-                      Add Income
-                    </Button>
+                  <div className="text-lg font-semibold text-green-500">
+                    {isLoading ? <div className="h-7 w-24 bg-muted/50 rounded animate-pulse"></div> : <AnimatedCurrencyValue amount={timeframe === 'all' ? allTimeSummary.totalIncome : summary.totalIncome} />}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="col-span-1"
-          >
-            {/* Remove the duplicate NetBalanceDisplay from here */}
+                <div className="flex flex-col items-center cursor-pointer hover:bg-accent/50 rounded-lg p-2 transition-colors" onClick={handleAddExpenseClick}>
+                  <div className="flex items-center text-sm font-medium"> {/* Changed items-right to items-center */}
+                    <TrendingDown className="mr-1 h-4 w-4 text-red-500" />
+                    Expenses
+                  </div>
+                  <div className="text-lg font-semibold text-red-500">
+                    {isLoading ? <div className="h-7 w-24 bg-muted/50 rounded animate-pulse"></div> : <AnimatedCurrencyValue amount={timeframe === 'all' ? allTimeSummary.totalExpenses : summary.totalExpenses} />}
+                  </div>
+                </div>
+              </div>
+            </div>
           </motion.div>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           <Tabs defaultValue="transactions" className="w-full">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <TabsList>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+              <TabsList className="w-full">
                 <TabsTrigger value="transactions">Transactions</TabsTrigger>
                 <TabsTrigger value="analytics">Analytics</TabsTrigger>
-                <TabsTrigger value="detailed">Detailed View</TabsTrigger>
               </TabsList>
             </div>
-            
             <TabsContent value="transactions" className="mt-0">
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex space-x-1">
-                  <Button
-                    variant={transactionTab === 'expenses' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setTransactionTab('expenses')}
-                  >
-                    <TrendingDown className="mr-2 h-4 w-4" />
-                    Expenses
-                  </Button>
-                  <Button
-                    variant={transactionTab === 'income' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setTransactionTab('income')}
-                  >
-                    <TrendingUp className="mr-2 h-4 w-4" />
-                    Income
-                  </Button>
-                </div>
-              </div>
-              
-              {transactionTab === 'expenses' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {isLoading ? (
-                    Array(6).fill(0).map((_, i) => (
-                      <div key={i} className="h-32 bg-muted/50 rounded-lg animate-pulse"></div>
-                    ))
-                  ) : expenses.length > 0 ? (
-                    expenses.map((expense, index) => (
-                      <motion.div
-                        key={expense.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.05 * (index % 6) }}
-                        onClick={() => handleExpenseClick(expense)}
-                      >
-                        <ExpenseCard expense={expense} onUpdate={loadData} />
-                      </motion.div>
-                    ))
-                  ) : (
-                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
-                      <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                        <Wallet className="h-8 w-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-lg font-medium">No expenses yet</h3>
-                      <p className="text-muted-foreground mt-1 mb-4">
-                        {timeframe === 'week' 
-                          ? 'You have no expenses recorded this week.' 
-                          : timeframe === 'month'
-                          ? 'You have no expenses recorded this month.'
-                          : timeframe === 'custom'
-                          ? `You have no expenses recorded from ${format(dateRange.from, 'MMM d, yyyy')} to ${format(dateRange.to, 'MMM d, yyyy')}.`
-                          : 'You have no expenses recorded.'}
-                      </p>
-                      <Button onClick={() => setIsAddExpenseOpen(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Your First Expense
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {isLoading ? (
-                    Array(6).fill(0).map((_, i) => (
-                      <div key={i} className="h-32 bg-muted/50 rounded-lg animate-pulse"></div>
-                    ))
-                  ) : incomes.length > 0 ? (
-                    incomes.map((income, index) => (
-                      <motion.div
-                        key={income.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.05 * (index % 6) }}
-                        onClick={() => handleIncomeClick(income)}
-                      >
-                        <IncomeCard 
-                          income={income} 
-                          onEdit={handleIncomeClick} 
-                          onDelete={loadData} 
-                        />
-                      </motion.div>
-                    ))
-                  ) : (
-                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
-                      <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                        <Wallet className="h-8 w-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-lg font-medium">No income yet</h3>
-                      <p className="text-muted-foreground mt-1 mb-4">
-                        {timeframe === 'week' 
-                          ? 'You have no income recorded this week.' 
-                          : timeframe === 'month'
-                          ? 'You have no income recorded this month.'
-                          : timeframe === 'custom'
-                          ? `You have no income recorded from ${format(dateRange.from, 'MMM d, yyyy')} to ${format(dateRange.to, 'MMM d, yyyy')}.`
-                          : 'You have no income recorded.'}
-                      </p>
-                      <Button onClick={() => setIsAddIncomeOpen(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Your First Income
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
+              <TransactionDashboard
+                expenses={expenses}
+                incomes={incomes}
+                onTransactionChange={handleTransactionChange}
+              />
             </TabsContent>
-            
             <TabsContent value="analytics" className="mt-0">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <ExpenseSummaryChart expenses={expenses} chartType="pie" />
-                <ExpenseSummaryChart expenses={expenses} chartType="bar" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ExpenseSummaryChart expenses={expenses} chartType="pie" key={`pie-${refreshKey}`} />
+                <ExpenseSummaryChart expenses={expenses} chartType="bar" key={`bar-${refreshKey}`} />
               </div>
-            </TabsContent>
-            
-            <TabsContent value="detailed" className="mt-0">
-              <TransactionViews expenses={expenses} incomes={incomes} />
             </TabsContent>
           </Tabs>
         </div>
       </div>
 
+      {/* Keep existing modal dialogs */}
       <Dialog open={isAddExpenseOpen} onOpenChange={setIsAddExpenseOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -486,10 +421,7 @@ const Index = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <ExpenseForm 
-            onSubmit={handleAddExpense}
-            onCancel={() => setIsAddExpenseOpen(false)}
-          />
+          <ExpenseForm onSubmit={handleAddExpense} onCancel={() => setIsAddExpenseOpen(false)} />
         </DialogContent>
       </Dialog>
       
@@ -502,32 +434,13 @@ const Index = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <IncomeForm 
-            onSubmit={handleAddIncome}
-            onCancel={() => setIsAddIncomeOpen(false)}
-          />
+          <IncomeForm onSubmit={handleAddIncome} onCancel={() => setIsAddIncomeOpen(false)} />
         </DialogContent>
       </Dialog>
 
-      {selectedExpense && (
-        <ExpenseEditForm
-          expense={selectedExpense}
-          isOpen={isEditExpenseOpen}
-          onClose={() => setIsEditExpenseOpen(false)}
-          onSave={handleExpenseEditSave}
-        />
-      )}
+      {selectedExpense && <ExpenseEditForm expense={selectedExpense} isOpen={isEditExpenseOpen} onClose={() => setIsEditExpenseOpen(false)} onSave={handleExpenseEditSave} />}
 
-      {selectedIncome && (
-        <IncomeEditForm
-          income={selectedIncome}
-          isOpen={isEditIncomeOpen}
-          onClose={() => setIsEditIncomeOpen(false)}
-          onSave={handleIncomeEditSave}
-        />
-      )}
-    </SafeLayout>
-  );
+      {selectedIncome && <IncomeEditForm income={selectedIncome} isOpen={isEditIncomeOpen} onClose={() => setIsEditIncomeOpen(false)} onSave={handleIncomeEditSave} />}
+    </SafeLayout>;
 };
-
 export default Index;

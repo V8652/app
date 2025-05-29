@@ -19,6 +19,8 @@ interface CollapsibleCardProps {
   elevated?: boolean;
   hoverEffect?: boolean;
   glassmorphism?: boolean;
+  autoRefresh?: boolean;
+  refreshInterval?: number;
 }
 
 export function CollapsibleCard({
@@ -33,9 +35,21 @@ export function CollapsibleCard({
   icon,
   elevated = false,
   hoverEffect = true,
-  glassmorphism = false
+  glassmorphism = false,
+  autoRefresh = false,
+  refreshInterval = 5000
 }: CollapsibleCardProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [key, setKey] = useState(0); // For forcing re-render
+
+  // Auto refresh logic
+  React.useEffect(() => {
+    if (!autoRefresh) return;
+    const intervalId = setInterval(() => {
+      setKey(prevKey => prevKey + 1);
+    }, refreshInterval);
+    return () => clearInterval(intervalId);
+  }, [autoRefresh, refreshInterval]);
 
   return (
     <Card 
@@ -55,24 +69,29 @@ export function CollapsibleCard({
         )}
         onClick={() => setIsOpen(!isOpen)}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 overflow-hidden">
           {icon && (
             <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-primary/10 text-primary">
               {icon}
             </div>
           )}
-          <div>
-            <CardTitle className="text-xl font-medium group-hover:text-primary transition-colors">{title}</CardTitle>
+          <div className="overflow-hidden">
+            <CardTitle className="text-xl font-medium group-hover:text-primary transition-colors truncate">
+              {title}
+            </CardTitle>
             {description && (
-              <CardDescription className="mt-0.5 text-sm">{description}</CardDescription>
+              <CardDescription className="mt-0.5 text-sm line-clamp-2">
+                {description}
+              </CardDescription>
             )}
           </div>
         </div>
-        <Button 
-          variant="ghost" 
-          size="icon" 
+        
+        <Button
+          variant="ghost"
+          size="icon"
           className="h-8 w-8 shrink-0 rounded-full"
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
             setIsOpen(!isOpen);
           }}
@@ -89,12 +108,14 @@ export function CollapsibleCard({
       <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
+            key={key} // Force re-render when key changes
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="overflow-hidden"
           >
-            <CardContent className={cn('pt-0', contentClassName)}>
+            <CardContent className={cn("px-0 py-0", contentClassName)}>
               {children}
             </CardContent>
             

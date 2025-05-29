@@ -1,16 +1,20 @@
 
 /**
  * Format a number as a currency with the specified currency code
+ * If isExpense is true, it will add a negative sign to display the value
+ * Otherwise it will be shown as positive regardless of the sign of the amount
  */
-export function formatCurrency(amount: number, currency: string = 'INR'): string {
+export function formatCurrency(amount: number, currency: string = 'INR', isExpense: boolean = false): string {
   const formatter = new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: currency || 'INR',
+    currency: currency, // Use the provided currency
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
   
-  return formatter.format(amount);
+  // Format value as positive, and apply negative sign only for expenses in display
+  const formattedValue = formatter.format(Math.abs(amount));
+  return isExpense ? `-${formattedValue}` : formattedValue;
 }
 
 /**

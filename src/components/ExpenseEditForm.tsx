@@ -72,7 +72,8 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       merchantName: expense.merchantName,
-      amount: expense.amount,
+      // Always use positive amount in the form
+      amount: Math.abs(expense.amount),
       paymentMethod: expense.paymentMethod || '',
       date: new Date(expense.date),
       category: expense.category,
@@ -84,7 +85,8 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
   useEffect(() => {
     form.reset({
       merchantName: expense.merchantName,
-      amount: expense.amount,
+      // Always use positive amount in the form
+      amount: Math.abs(expense.amount),
       paymentMethod: expense.paymentMethod || '',
       date: new Date(expense.date),
       category: expense.category,
@@ -98,7 +100,8 @@ const ExpenseEditForm = ({ expense, isOpen, onClose, onSave }: ExpenseEditFormPr
       const updatedExpense: Expense = {
         ...expense,
         merchantName: values.merchantName,
-        amount: values.amount,
+        // Always store amount as positive
+        amount: Math.abs(values.amount),
         paymentMethod: values.paymentMethod || '',
         date: values.date.toISOString(),
         category: values.category as ExpenseCategory,

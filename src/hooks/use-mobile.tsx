@@ -26,20 +26,33 @@ export function useIsMobile() {
  */
 export function isNativeApp(): boolean {
   try {
-    // Add detailed logging for debugging
-    const hasCapacitorObject = typeof window !== 'undefined' && window?.Capacitor !== undefined;
-    const hasIsNativePlatformFunction = hasCapacitorObject && typeof window?.Capacitor?.isNativePlatform === 'function';
-    const isNativePlatformResult = hasIsNativePlatformFunction && window?.Capacitor?.isNativePlatform?.();
+    // Check for Capacitor object first
+    if (typeof window === 'undefined' || !window.Capacitor) {
+      return false;
+    }
     
-    // Log detailed platform detection information
-    console.log('Platform detection details:', {
-      hasCapacitorObject,
-      hasIsNativePlatformFunction,
-      isNativePlatformResult,
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'undefined'
-    });
+    // Check if we have the isNativePlatform function
+    if (typeof window.Capacitor.isNativePlatform === 'function') {
+      return !!window.Capacitor.isNativePlatform();
+    }
     
-    return !!isNativePlatformResult;
+    // Fallback to platform property if isNativePlatform isn't available
+    if (window.Capacitor.platform && window.Capacitor.platform !== 'web') {
+      return true;
+    }
+    
+    // Check for isNative property (which might be used in some versions)
+    if (window.Capacitor.isNative === true) {
+      return true;
+    }
+    
+    // Final fallback - check for Capacitor plugins
+    if (window.Capacitor.Plugins && Object.keys(window.Capacitor.Plugins).length > 0) {
+      // Having Capacitor plugins typically means we're on a native platform
+      return true;
+    }
+    
+    return false;
   } catch (error) {
     console.error("Error detecting platform:", error);
     return false; // Default to false on error

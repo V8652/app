@@ -1,60 +1,31 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FolderOpen } from 'lucide-react';
-import { requestExportDirectory, isAndroidDevice, isCapacitorApp } from '@/lib/export-path';
+import { requestExportDirectory, isAndroidDevice } from '@/lib/export-path';
 import { toast } from '@/hooks/use-toast';
-import { Filesystem, Directory } from '@capacitor/filesystem';
 
 const MasterExportPathSelector = () => {
   const [isSelecting, setIsSelecting] = React.useState(false);
   const [exportPath, setExportPath] = React.useState<string>("");
   const isAndroid = isAndroidDevice();
-  const isCapacitor = isCapacitorApp();
 
   React.useEffect(() => {
-    // On component mount, check if we're on Android and get the Documents directory path
+    // On component mount, check if we're on Android and set the default path
     const checkAndroidPath = async () => {
-      if (isAndroid && isCapacitor) {
+      if (isAndroid) {
         try {
-          // Try to get Documents directory first
-          try {
-            const result = await Filesystem.getUri({
-              path: '',
-              directory: Directory.Documents
-            });
-            console.log("Android Documents directory:", result.uri);
-            setExportPath(result.uri);
-            return;
-          } catch (docError) {
-            console.log("Could not access Documents directory:", docError);
-          }
-          
-          // Fallback to Downloads directory
-          try {
-            const result = await Filesystem.getUri({
-              path: '',
-              directory: Directory.External
-            });
-            console.log("Android External directory:", result.uri);
-            setExportPath(result.uri + "/Download");
-            return;
-          } catch (extError) {
-            console.log("Could not access External directory:", extError);
-          }
-          
-          // Set a default path if all else fails
+          // Set a default path for Android devices
           setExportPath("/storage/emulated/0/Download");
         } catch (error) {
-          console.error("Error getting Android directory:", error);
+          console.error("Error setting Android directory:", error);
           setExportPath("/storage/emulated/0/Download");
         }
       }
     };
     
     checkAndroidPath();
-  }, [isAndroid, isCapacitor]);
+  }, [isAndroid]);
 
   const handleSelectExportPath = async () => {
     try {

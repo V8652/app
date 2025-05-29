@@ -1,93 +1,63 @@
-
-export type ExpenseCategory =
-  | 'other'
-  | string; // Allow any string to support custom categories
-
-export type IncomeCategory =
-  | 'other'
-  | string; // Allow any string to support custom categories
-
-export type TimeFrame =
-  | 'week'
-  | 'month'
-  | 'quarter'
-  | 'year';
-
-// Updated Preference interface to match UserPreferences
-export interface Preference {
-  id: string;
-  defaultCurrency: string;
-  defaultExpenseCategory: ExpenseCategory;
-  defaultIncomeCategory: IncomeCategory;
-  defaultTimeFrame: TimeFrame;
-  categorizeAutomatically: boolean;
-  gmailCredentials?: GmailCredentials;
-}
-
-export interface UserPreferences {
-  defaultCurrency: string;
-  defaultExpenseCategory: ExpenseCategory;
-  defaultIncomeCategory: IncomeCategory;
-  defaultTimeFrame: TimeFrame;
-  categorizeAutomatically: boolean;
-  gmailCredentials?: GmailCredentials;
-}
-
-export interface GmailCredentials {
-  clientId: string;
-  apiKey: string;
-  accessToken: string;
-  refreshToken: string;
-  expiryDate: number;
-}
-
+// Types for transactions
 export interface Transaction {
   id: string;
-  date: string;
-  amount: number;
+  type: 'expense' | 'income';
+  amount: number; // Positive number for both expenses and incomes
   currency: string;
-  category: ExpenseCategory | IncomeCategory;
-  description?: string;
-  type: 'income' | 'expense';
-  merchantName?: string;
-  notes?: string;
+  date: string;
+  merchantName: string;
+  category: string;
   paymentMethod?: string;
-  emailId?: string;
+  notes?: string;
+  isRecurring?: boolean;
+  isAutoEnriched?: boolean;
   isManualEntry?: boolean;
-  isEdited?: boolean;
+  source?: string; // Added source property
+  sender?: string; // Added sender property for SMS transactions
 }
 
-export interface Income extends Omit<Transaction, 'category'> {
-  id: string;
-  date: string;
-  amount: number;
-  currency: string;
-  category: IncomeCategory;
-  merchantName: string;
-  description?: string;
-  notes?: string;
-  paymentMethod?: string;
-  type: 'income';
-  isManualEntry?: boolean;
-  isEdited?: boolean;
-}
-
-export interface Expense extends Omit<Transaction, 'category'> {
-  id: string;
-  merchantName: string;
-  amount: number;
-  currency: string;
-  date: string;
-  category: ExpenseCategory;
-  notes?: string;
-  paymentMethod?: string;
-  emailId?: string;
+export interface Expense extends Transaction {
   type: 'expense';
-  isManualEntry?: boolean;
+  category: ExpenseCategory;
   isEdited?: boolean;
+  isAutoEnriched?: boolean;
 }
 
-// Add CategorySummary interface for charts
+export interface Income extends Transaction {
+  type: 'income';
+  category: IncomeCategory;
+  isEdited?: boolean;
+  isAutoEnriched?: boolean;
+}
+
+export type ExpenseCategory =
+  | 'groceries'
+  | 'utilities'
+  | 'entertainment'
+  | 'transportation'
+  | 'dining'
+  | 'shopping'
+  | 'health'
+  | 'travel'
+  | 'housing'
+  | 'education'
+  | 'subscriptions'
+  | 'uncategorized'  
+  | 'other';
+
+export type IncomeCategory =
+  | 'salary'
+  | 'freelance'
+  | 'investments'
+  | 'rent'
+  | 'gifts'
+  | 'other';
+
+export interface DateRange {
+  from: Date;
+  to: Date;
+}
+
 export interface CategorySummary {
   category: string;
   total: number;
@@ -95,22 +65,62 @@ export interface CategorySummary {
   color: string;
 }
 
-// Add DateRange interface for analytics
-export interface DateRange {
-  from: Date;
-  to: Date;
-}
-
-// Updated UserCategories interface to ensure categoryColors is properly typed
 export interface UserCategories {
-  id?: string;
+  id: string;
   expenseCategories?: string[];
   incomeCategories?: string[];
-  categoryColors?: Record<string, string>; // Map category names to colors
+  categoryColors?: Record<string, string>;
+  categoryIcons?: Record<string, string>;
 }
 
-// Add interface for category with color
-export interface CategoryWithColor {
+export interface Category {
+  id: string;
   name: string;
-  color: string;
+  type: 'expense' | 'income';
+  color?: string;
+}
+
+export interface ParserRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority?: number;
+  senderMatch: string | string[];
+  amountRegex: string | string[];
+  merchantCondition: string | string[];
+  merchantCommonPatterns?: string | string[];
+  skipCondition?: string | string[];
+  paymentBank: string;
+  transactionType?: 'expense' | 'income';
+  categoryOverride?: string;
+}
+
+export interface Preference {
+  id: string; // Added missing id property
+  theme?: 'light' | 'dark' | 'system';
+  currency?: string;
+  defaultExpenseCategory?: string;
+  defaultIncomeCategory?: string;
+  defaultCurrency?: string;
+  defaultTimeFrame?: TimeFrame;
+  categorizeAutomatically?: boolean;
+}
+
+export interface FinancialSummary {
+  totalExpenses: number;
+  totalIncome: number;
+  balance: number;
+}
+
+export type TimeFrame = 'day' | 'week' | 'month' | 'year' | 'all' | 'custom';
+
+export interface UserPreferences {
+  theme: 'light' | 'dark' | 'system';
+  currency: string;
+  defaultTimeframe: TimeFrame;
+  defaultExpenseCategory: string;
+  defaultIncomeCategory: string;
+  showBalanceOnDashboard: boolean;
+  enableAutoCategories: boolean;
+  enableNotifications: boolean;
 }

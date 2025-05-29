@@ -1,4 +1,3 @@
-
 /**
  * Utilities for managing export path preferences
  */
@@ -38,6 +37,24 @@ export const getMasterExportPath = (): string | null => {
 };
 
 /**
+ * Get the export path for saving files
+ * This will return the saved path or a default path
+ */
+export const getExportPath = async (): Promise<string | null> => {
+  const savedPath = getMasterExportPath();
+  if (savedPath) {
+    return savedPath;
+  }
+  
+  // Default to Downloads folder on Android
+  if (isAndroidDevice()) {
+    return "/storage/emulated/0/Download";
+  }
+  
+  return null;
+};
+
+/**
  * Clear the saved master export path
  */
 export const clearMasterExportPath = (): void => {
@@ -74,116 +91,75 @@ export const isCapacitorApp = (): boolean => {
  */
 export const requestAndroidPermissions = async (): Promise<boolean> => {
   try {
-    if (isAndroidDevice()) {
-      console.log('Requesting Android storage permissions...');
+    if (isAndroidDevice() && isCapacitorApp()) {
+      console.log('Checking Android storage permissions...');
       
-      // Try to use Capacitor Permissions API if available
-      if (typeof (window as any).Capacitor !== 'undefined' && 
-          (window as any).Capacitor.Plugins?.Permissions) {
-        console.log('Using Capacitor Permissions API');
-        const permissions = (window as any).Capacitor.Plugins.Permissions;
+      // For Android 10+ (API level 29+)
+      if (parseInt((navigator.userAgent.match(/Android\s([0-9]+)/) || [])[1] || '0', 10) >= 10) {
+        console.log('Android 10+ detected, using MANAGE_EXTERNAL_STORAGE permission');
         
-        // Check and request storage permissions
-        const storageState = await permissions.query({ name: 'storage' });
-        console.log('Initial storage permission state:', storageState);
-        
-        if (storageState.state !== 'granted') {
-          console.log('Storage permission not granted, requesting...');
-          const requestResult = await permissions.request({ name: 'storage' });
-          console.log('Storage permission request result:', requestResult);
-          
-          if (requestResult.state !== 'granted') {
+        // Request MANAGE_EXTERNAL_STORAGE permission
+        const result = await Filesystem.checkPermissions();
+        if (result.publicStorage !== 'granted') {
+          const requestResult = await Filesystem.requestPermissions();
+          if (requestResult.publicStorage !== 'granted') {
             console.log('Storage permission denied');
             return false;
           }
         }
-        
-        // On Android 13+, we might need additional media permissions
-        const apiLevel = parseInt((navigator.userAgent.match(/Android\s([0-9]+)/) || [])[1] || '0', 10);
-        console.log('Android API level detected:', apiLevel);
-        
-        if (apiLevel >= 33) {
-          console.log('Android 13+ detected, requesting media permissions');
-          // Request additional media permissions for Android 13+
-          const mediaTypes = ['photos', 'videos', 'audio'];
-          for (const media of mediaTypes) {
-            try {
-              const mediaState = await permissions.query({ name: media as any });
-              if (mediaState.state !== 'granted') {
-                await permissions.request({ name: media as any });
-              }
-            } catch (e) {
-              console.log(`Error requesting ${media} permission:`, e);
-              // Continue even if this fails
-            }
-          }
-        }
-        
-        console.log('All necessary permissions requested');
         return true;
-      }
-      
-      // Fall back to Cordova Permissions plugin if available
-      else if ((window as any).cordova?.plugins?.permissions) {
-        console.log('Using Cordova Permissions plugin');
-        const storagePermissions = [
-          'android.permission.READ_EXTERNAL_STORAGE',
-          'android.permission.WRITE_EXTERNAL_STORAGE'
-        ];
-        
-        // For Android 10+
-        if (parseInt((navigator.userAgent.match(/Android\s([0-9]+)/) || [])[1] || '0', 10) >= 10) {
-          storagePermissions.push('android.permission.MANAGE_EXTERNAL_STORAGE');
-        }
-        
-        for (const permission of storagePermissions) {
-          const permResult = await new Promise<boolean>((resolve) => {
-            (window as any).cordova.plugins.permissions.checkPermission(
-              permission,
-              (status: { hasPermission: boolean }) => {
-                console.log(`Permission ${permission} status:`, status);
-                resolve(status.hasPermission);
-              },
-              () => {
-                console.log(`Error checking permission ${permission}`);
-                resolve(false);
-              }
-            );
-          });
+      } else {
+        // For Android 9 and below
+        console.log('Android 9 or below detected, using legacy storage permissions');
+        if ((window as any).cordova?.plugins?.permissions) {
+          const permissions = [
+            'android.permission.READ_EXTERNAL_STORAGE',
+            'android.permission.WRITE_EXTERNAL_STORAGE'
+          ];
           
-          if (!permResult) {
-            const granted = await new Promise<boolean>((resolve) => {
-              (window as any).cordova.plugins.permissions.requestPermission(
+          for (const permission of permissions) {
+            const permResult = await new Promise<boolean>((resolve) => {
+              (window as any).cordova.plugins.permissions.checkPermission(
                 permission,
                 (status: { hasPermission: boolean }) => {
-                  console.log(`Permission ${permission} request result:`, status);
+                  console.log(`Permission ${permission} status:`, status);
                   resolve(status.hasPermission);
                 },
                 () => {
-                  console.log(`Error requesting permission ${permission}`);
+                  console.log(`Error checking permission ${permission}`);
                   resolve(false);
                 }
               );
             });
             
-            if (!granted) {
-              console.log(`Permission ${permission} denied`);
-              return false;
+            if (!permResult) {
+              const granted = await new Promise<boolean>((resolve) => {
+                (window as any).cordova.plugins.permissions.requestPermission(
+                  permission,
+                  (status: { hasPermission: boolean }) => {
+                    console.log(`Permission ${permission} request result:`, status);
+                    resolve(status.hasPermission);
+                  },
+                  () => {
+                    console.log(`Error requesting permission ${permission}`);
+                    resolve(false);
+                  }
+                );
+              });
+              
+              if (!granted) {
+                console.log(`Permission ${permission} denied`);
+                return false;
+              }
             }
           }
+          return true;
         }
-        
-        console.log('All Cordova permissions granted');
-        return true;
       }
-      
-      console.log('No permission API available, assuming permissions are granted');
     }
-    
-    // Not Android or no permission API available
     return true;
   } catch (error) {
-    console.error('Error checking permissions:', error);
+    console.error('Error requesting Android permissions:', error);
     return false;
   }
 };

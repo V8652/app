@@ -29,6 +29,7 @@ import { CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { getUserCategories } from '@/lib/db';
+import { getPreviousTransactionData } from '@/lib/transaction-enricher';
 
 // Default categories for the form - Now only contains 'other'
 const DEFAULT_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
@@ -92,7 +93,8 @@ const ExpenseForm = ({ expense, onSubmit, onCancel }: ExpenseFormProps) => {
     resolver: zodResolver(formSchema),
     defaultValues: expense ? {
       merchantName: expense.merchantName,
-      amount: expense.amount.toString(),
+      // Ensure amount is always positive for the form
+      amount: Math.abs(expense.amount).toString(),
       currency: expense.currency,
       date: new Date(expense.date),
       category: expense.category,
@@ -109,18 +111,42 @@ const ExpenseForm = ({ expense, onSubmit, onCancel }: ExpenseFormProps) => {
     }
   });
 
+  // Auto-populate category and notes based on merchant name
+  const handleMerchantNameChange = async (merchantName: string) => {
+    if (!merchantName) return;
+    
+    try {
+      const previousData = await getPreviousTransactionData(merchantName);
+      
+      if (previousData) {
+        // Only update category if there's data and current is default
+        if (previousData.category && form.getValues('category') === 'other') {
+          form.setValue('category', previousData.category);
+        }
+        
+        // Only update notes if they're empty
+        if (previousData.notes && !form.getValues('notes')) {
+          form.setValue('notes', previousData.notes);
+        }
+      }
+    } catch (error) {
+      console.error('Error finding previous transaction data:', error);
+    }
+  };
+
   const handleSubmit = (values: FormValues) => {
     const formattedExpense: Expense = {
       id: expense?.id || uuidv4(),
       merchantName: values.merchantName,
-      amount: parseFloat(values.amount),
+      // Always store as positive amount
+      amount: Math.abs(parseFloat(values.amount)),
       currency: values.currency,
       date: values.date.toISOString(),
       category: values.category as ExpenseCategory,
       paymentMethod: values.paymentMethod || undefined,
       notes: values.notes || undefined,
-      isManualEntry: true,
-      type: 'expense'
+      type: 'expense',
+      isManualEntry: true
     };
     
     onSubmit(formattedExpense);
@@ -138,7 +164,15 @@ const ExpenseForm = ({ expense, onSubmit, onCancel }: ExpenseFormProps) => {
               <FormItem>
                 <FormLabel>Merchant</FormLabel>
                 <FormControl>
-                  <Input className="input-animated" placeholder="e.g. Whole Foods" {...field} />
+                  <Input 
+                    className="input-animated" 
+                    placeholder="e.g. Whole Foods" 
+                    {...field} 
+                    onChange={(e) => {
+                      field.onChange(e);
+                      handleMerchantNameChange(e.target.value);
+                    }}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

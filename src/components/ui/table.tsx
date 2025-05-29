@@ -1,12 +1,13 @@
+
 import * as React from "react"
+
 import { cn } from "@/lib/utils"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement> & { fullWidth?: boolean }
->(({ className, fullWidth = true, ...props }, ref) => (
-  <div className={cn("w-full", fullWidth ? "overflow-auto" : "")}>
+  React.HTMLAttributes<HTMLTableElement>
+>(({ className, ...props }, ref) => (
+  <div className="relative w-full overflow-auto">
     <table
       ref={ref}
       className={cn("w-full caption-bottom text-sm", className)}
@@ -15,18 +16,6 @@ const Table = React.forwardRef<
   </div>
 ))
 Table.displayName = "Table"
-
-const TableScrollArea = React.forwardRef<
-  React.ElementRef<typeof ScrollArea>,
-  React.ComponentPropsWithoutRef<typeof ScrollArea>
->(({ className, children, ...props }, ref) => (
-  <ScrollArea ref={ref} className={cn("w-full", className)} {...props}>
-    <div className="min-w-[800px]">
-      {children}
-    </div>
-  </ScrollArea>
-))
-TableScrollArea.displayName = "TableScrollArea"
 
 const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
@@ -54,10 +43,7 @@ const TableFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <tfoot
     ref={ref}
-    className={cn(
-      "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
-      className
-    )}
+    className={cn("bg-primary font-medium text-primary-foreground", className)}
     {...props}
   />
 ))
@@ -126,5 +112,18 @@ export {
   TableRow,
   TableCell,
   TableCaption,
-  TableScrollArea,
 }
+
+export const TableScrollArea = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, children, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("w-full overflow-auto", className)}
+    {...props}
+  >
+    {children}
+  </div>
+))
+TableScrollArea.displayName = "TableScrollArea"

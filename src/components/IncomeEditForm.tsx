@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Income, IncomeCategory } from '@/types';
 import { updateTransaction, getUserCategories } from '@/lib/db';
+import { getPreviousTransactionData } from '@/lib/transaction-enricher';
 
 const incomeSchema = z.object({
   merchantName: z.string().min(1, 'Source name is required'),
@@ -91,6 +91,30 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
     });
   }, [income, form]);
   
+  // Auto-populate category and notes based on merchant name
+  const handleMerchantNameChange = async (merchantName: string) => {
+    if (!merchantName) return;
+    
+    try {
+      const previousData = await getPreviousTransactionData(merchantName);
+      
+      if (previousData) {
+        // Only update category if there's data and current is default
+        if (previousData.category && 
+            (form.getValues('category') === 'salary' || form.getValues('category') === 'other')) {
+          form.setValue('category', previousData.category);
+        }
+        
+        // Only update notes if they're empty
+        if (previousData.notes && !form.getValues('notes')) {
+          form.setValue('notes', previousData.notes);
+        }
+      }
+    } catch (error) {
+      console.error('Error finding previous transaction data:', error);
+    }
+  };
+  
   const handleSubmit = async (values: IncomeFormValues) => {
     setIsSubmitting(true);
     try {
@@ -140,7 +164,13 @@ const IncomeEditForm = ({ income, isOpen, onClose, onSave }: IncomeEditFormProps
                 <FormItem>
                   <FormLabel>Source</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input 
+                      {...field} 
+                      onChange={(e) => {
+                        field.onChange(e);
+                        handleMerchantNameChange(e.target.value);
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

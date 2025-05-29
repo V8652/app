@@ -1,6 +1,6 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -8,7 +8,7 @@
 
 @layer base {
   :root {
-    /* Premium color palette - Light mode */
+    /* Modern color palette - Light mode */
     --background: 220 25% 97%;
     --foreground: 224 71% 4%;
 
@@ -66,7 +66,7 @@
   }
 
   .dark {
-    /* Premium color palette - Dark mode */
+    /* Modern color palette - Dark mode */
     --background: 224 71% 4%;
     --foreground: 213 31% 91%;
 
@@ -105,10 +105,15 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
     -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
   }
 
-  /* Premium scrollbar */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium tracking-tight;
+  }
+
+  /* Modern scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -120,35 +125,6 @@
 
   ::-webkit-scrollbar-thumb {
     @apply bg-muted-foreground/30 rounded-full transition-colors hover:bg-muted-foreground/60;
-  }
-
-  /* Modern ripple effect for buttons */
-  .ripple {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .ripple::after {
-    content: "";
-    display: block;
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    top: 0;
-    left: 0;
-    pointer-events: none;
-    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.3) 10%, transparent 10.01%);
-    background-repeat: no-repeat;
-    background-position: 50%;
-    transform: scale(10, 10);
-    opacity: 0;
-    transition: transform 0.5s, opacity 0.8s;
-  }
-
-  .ripple:active::after {
-    transform: scale(0, 0);
-    opacity: 0.3;
-    transition: 0s;
   }
 
   /* Page transitions */
@@ -176,14 +152,14 @@
 }
 
 @layer components {
-  /* Premium cards with proper elevation */
+  /* Modern cards with proper elevation */
   .premium-card {
-    @apply bg-card rounded-xl shadow-premium border-0 overflow-hidden transition-all duration-300 hover:shadow-premium-hover;
+    @apply bg-card rounded-xl shadow-sm border-0 overflow-hidden transition-all duration-300 hover:shadow;
   }
 
   /* Glass card */
   .glass-card {
-    @apply bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border border-white/20 dark:border-gray-800/50 shadow-subtle;
+    @apply bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border border-white/20 dark:border-gray-800/50 shadow-sm;
   }
 
   /* Shimmer loading effect */
@@ -191,37 +167,56 @@
     @apply relative overflow-hidden bg-muted/50 before:absolute before:inset-0 before:-translate-x-full before:animate-shimmer before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent;
   }
 
-  /* Premium button */
+  /* Modern button */
   .btn-premium {
-    @apply relative overflow-hidden ripple bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-medium 
-    shadow-button transition-all duration-300 
+    @apply relative overflow-hidden ripple bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium 
+    shadow-sm transition-all duration-300 
     hover:brightness-110 active:brightness-90 focus:outline-none focus:ring-2 focus:ring-primary/50;
   }
 
-  /* Premium input fields */
+  /* Modern input fields */
   .premium-input {
-    @apply h-12 px-4 rounded-lg border bg-transparent focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors duration-200;
+    @apply h-10 px-3 rounded-lg border bg-transparent focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors duration-200;
   }
 
   /* Material chip/tag component */
   .premium-chip {
-    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground;
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground;
   }
   
-  /* Premium expense card */
+  /* Modern expense card */
   .expense-card {
-    @apply rounded-xl shadow-card border-0 overflow-hidden transition-all duration-300 
-    hover:shadow-card-hover active:scale-98;
+    @apply rounded-xl shadow-sm border overflow-hidden transition-all duration-300 
+    hover:shadow active:scale-[0.99];
   }
   
   /* Category badge */
   .category-badge {
-    @apply flex items-center rounded-full px-2.5 py-1 text-xs font-medium;
+    @apply flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
-  /* Premium data display */
+  /* Modern data display */
   .data-display {
-    @apply bg-gradient-to-br from-card to-card/80 backdrop-blur-sm rounded-xl p-4 shadow-premium transition-all duration-300 hover:shadow-premium-hover;
+    @apply bg-gradient-to-br from-card to-card/80 backdrop-blur-sm rounded-xl p-3 shadow-sm transition-all duration-300 hover:shadow;
+  }
+
+  /* Action buttons */
+  .action-button {
+    @apply inline-flex items-center justify-center rounded-full w-8 h-8 text-muted-foreground 
+    bg-muted/50 hover:bg-muted transition-colors;
+  }
+  
+  /* SMS Scan button fix for mobile */
+  .sms-scan-button {
+    @apply whitespace-nowrap flex-shrink-0;
+  }
+  
+  /* Force refresh animation - helps with component rerenders */
+  .force-refresh-animation {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+    contain: layout style paint;
   }
 }
 
@@ -257,3 +252,31 @@
 .stagger-item:nth-child(8) { animation-delay: 350ms; }
 .stagger-item:nth-child(9) { animation-delay: 400ms; }
 .stagger-item:nth-child(10) { animation-delay: 450ms; }
+
+/* Mobile safe areas */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.pl-safe {
+  padding-left: env(safe-area-inset-left);
+}
+
+.pr-safe {
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Key frame animations to help with content reflow */
+@keyframes contentReflow {
+  0% { opacity: 0.99; }
+  100% { opacity: 1; }
+}
+
+/* Apply content reflow animation to force repaint */
+.content-reflow {
+  animation: contentReflow 0.1s ease-in-out;
+}

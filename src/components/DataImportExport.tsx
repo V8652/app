@@ -1,12 +1,13 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { exportTransactionsToCSV, importTransactionsFromCSV, pickFile } from '@/lib/import-export';
-import { checkAndRequestStoragePermissions } from '@/lib/import-export';
-import { isAndroidDevice, isCapacitorApp } from '@/lib/export-path';
+import { exportTransactionsToCSV, importTransactionsFromCSV } from '@/lib/csv-handler';
+import { checkAndRequestStoragePermissions, pickFile } from '@/lib/file-utils'; 
+import { isAndroidDevice } from '@/lib/platform-utils';
+import { motion } from 'framer-motion';
+import { dbEvents, DatabaseEvent } from '@/lib/db-event';
 
 interface DataImportExportProps {
   onDataChanged: () => void;
@@ -15,14 +16,46 @@ interface DataImportExportProps {
 const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const isAndroid = isAndroidDevice();
-  const isCapacitor = isCapacitorApp();
+  const [lastImportTime, setLastImportTime] = useState<Date | null>(null);
+  
+  // Check for last import time in localStorage
+  useEffect(() => {
+    const lastImport = localStorage.getItem('lastImportTime');
+    if (lastImport) {
+      setLastImportTime(new Date(lastImport));
+    }
+  }, []);
+  
+  // Listen for import events
+  useEffect(() => {
+    const handleDataImported = () => {
+      const now = new Date();
+      setLastImportTime(now);
+      localStorage.setItem('lastImportTime', now.toISOString());
+      onDataChanged();
+    };
+    
+    const unsubscribe = dbEvents.subscribe(DatabaseEvent.DATA_IMPORTED, handleDataImported);
+    return () => unsubscribe();
+  }, [onDataChanged]);
   
   // Function to handle transaction data export
   const handleExportTransactions = async () => {
     try {
       setIsExporting(true);
       console.log('Starting transaction export...');
+      
+      // Enhanced logging for Android debugging
+      const isAndroid = isAndroidDevice();
+      if (isAndroid) {
+        console.log('Android device detected, platform details:');
+        console.log('- User Agent:', navigator.userAgent);
+      }
+      
+      toast({
+        title: "Starting Export",
+        description: "Preparing transaction data for export...",
+      });
       
       // Request storage permissions first on Android
       const hasPermissions = await checkAndRequestStoragePermissions();
@@ -31,7 +64,7 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
       if (!hasPermissions) {
         toast({
           title: "Permission Denied",
-          description: "Storage permissions are required to export data.",
+          description: "Storage permissions are required to export data. Please grant permissions in your device settings.",
           variant: "destructive",
         });
         return;
@@ -40,14 +73,34 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
       // Export transactions to CSV with a timestamp in the filename
       const date = new Date();
       const timestamp = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      await exportTransactionsToCSV(`transactions_${timestamp}.csv`);
+      const filename = `transactions_${timestamp}.csv`;
+      
+      await exportTransactionsToCSV(filename);
+      
+      // Show appropriate success message based on platform
+      if (isAndroid) {
+        toast({
+          title: "Export Complete",
+          description: "Your file has been saved. Check your Downloads folder or Files app to view it.",
+          duration: 5000
+        });
+      } else {
+        toast({
+          title: "Export Complete",
+          description: "Your file has been downloaded successfully.",
+          duration: 3000
+        });
+      }
+      
       console.log('Transaction export completed');
+      
     } catch (error) {
       console.error('Error exporting transactions:', error);
       toast({
         title: "Export Failed",
-        description: `Failed to export data: ${(error as Error).message || 'Unknown error'}`,
+        description: `Failed to export data: ${(error as Error).message || 'Unknown error'}. Please try again.`,
         variant: "destructive",
+        duration: 5000
       });
     } finally {
       setIsExporting(false);
@@ -61,10 +114,11 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
       console.log('Initiating transaction import...');
       
       // Enhanced logging for Android debugging
+      const isAndroid = isAndroidDevice();
+      
       if (isAndroid) {
         console.log('Android device detected, platform details:');
         console.log('- User Agent:', navigator.userAgent);
-        console.log('- Is Capacitor App:', isCapacitor);
       }
       
       // Request storage permissions first on Android
@@ -77,44 +131,58 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
           description: "Storage permissions are required to import data.",
           variant: "destructive",
         });
-        setIsImporting(false);
         return;
       }
       
-      // Use our improved file picking function
+      // Use our improved file picking function from file-utils.ts
       console.log('Calling pickFile function...');
-      const file = await pickFile(['text/csv']);
+      const file = await pickFile(['text/csv', '.csv', 'application/vnd.ms-excel']);
       console.log('pickFile function returned:', file ? `File: ${file.name}` : 'null');
       
       if (!file) {
         console.log('No file selected, cancelling import');
+        toast({
+          title: "Import Cancelled",
+          description: "No file was selected for import.",
+          variant: "destructive"
+        });
         setIsImporting(false);
         return;
       }
       
       console.log(`Selected file for import: ${file.name}, size: ${file.size} bytes`);
       
+      // Show processing toast
+      toast({
+        title: "Processing Import",
+        description: "Analyzing transaction data...",
+      });
+      
       try {
         // Import transactions from the selected CSV file
-        await importTransactionsFromCSV(file);
+        const importedData = await importTransactionsFromCSV(file);
+        console.log('Import successful:', importedData.length, 'transactions');
         
-        // Notify the parent component that data has changed
+        // Update last import time and save to localStorage
+        const now = new Date();
+        setLastImportTime(now);
+        localStorage.setItem('lastImportTime', now.toISOString());
+        
+        // Trigger data updated events
+        dbEvents.emit(DatabaseEvent.DATA_IMPORTED, true);
+        
+        // Call the onDataChanged callback immediately after successful import
         onDataChanged();
-        
-        toast({
-          title: "Import Complete",
-          description: "Your transaction data has been imported successfully.",
-        });
-      } catch (error) {
-        console.error('Error importing transactions:', error);
+      } catch (importError) {
+        console.error('Error importing transactions:', importError);
         toast({
           title: "Import Failed",
-          description: `Failed to import data: ${(error as Error).message || 'Unknown error'}`,
+          description: `Failed to import data: ${(importError as Error).message || 'Unknown error'}`,
           variant: "destructive",
         });
       }
     } catch (error) {
-      console.error('Error setting up file input:', error);
+      console.error('Error setting up import:', error);
       toast({
         title: "Import Failed",
         description: `Failed to set up file picker: ${(error as Error).message || 'Unknown error'}`,
@@ -131,6 +199,15 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
         <CardTitle>Data Management</CardTitle>
         <CardDescription>
           Import and export your transaction data
+          {lastImportTime && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-xs text-muted-foreground mt-1"
+            >
+              Last import: {lastImportTime.toLocaleString()}
+            </motion.div>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -139,9 +216,19 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
             variant="default" 
             onClick={handleExportTransactions} 
             disabled={isExporting}
-            className="flex-1"
+            className="flex-1 transition-all"
           >
-            <Download className="mr-2 h-4 w-4" />
+            {isExporting ? (
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                className="mr-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </motion.div>
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
             {isExporting ? "Exporting..." : "Export Transaction Data"}
           </Button>
           
@@ -149,9 +236,19 @@ const DataImportExport = ({ onDataChanged }: DataImportExportProps) => {
             variant="outline" 
             onClick={handleImportTransactions} 
             disabled={isImporting}
-            className="flex-1"
+            className="flex-1 transition-all"
           >
-            <Upload className="mr-2 h-4 w-4" />
+            {isImporting ? (
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                className="mr-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </motion.div>
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
             {isImporting ? "Importing..." : "Import Transaction Data"}
           </Button>
         </div>

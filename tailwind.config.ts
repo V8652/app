@@ -21,7 +21,7 @@ export default {
 		},
 		extend: {
 			fontFamily: {
-				sans: ['Roboto', 'SF Pro Display', 'Inter', 'system-ui', 'sans-serif'],
+				sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
 				mono: ['SF Mono', 'monospace'],
 			},
 			colors: {
@@ -92,9 +92,11 @@ export default {
 				xl: '1rem',
 				'2xl': '1.5rem',
 				'3xl': '2rem',
+				'full': '9999px',
 			},
 			scale: {
 				'98': '0.98',  // Add custom scale value for active:scale-98
+				'102': '1.02',  // Add custom scale value for hover:scale-102
 			},
 			keyframes: {
 				'accordion-down': {
@@ -148,7 +150,28 @@ export default {
 				ripple: {
 					'0%': { transform: 'scale(0)', opacity: '0.8' },
 					'100%': { transform: 'scale(4)', opacity: '0' }
-				}
+				},
+				// New animations
+				fadeInScale: {
+					'0%': { opacity: '0', transform: 'scale(0.95)' },
+					'100%': { opacity: '1', transform: 'scale(1)' }
+				},
+				fadeOutScale: {
+					'0%': { opacity: '1', transform: 'scale(1)' },
+					'100%': { opacity: '0', transform: 'scale(0.95)' }
+				},
+				bounce: {
+					'0%, 100%': { transform: 'translateY(0)' },
+					'50%': { transform: 'translateY(-5px)' }
+				},
+				slideRight: {
+					'0%': { transform: 'translateX(-10px)', opacity: '0' },
+					'100%': { transform: 'translateX(0)', opacity: '1' }
+				},
+				slideLeft: {
+					'0%': { transform: 'translateX(10px)', opacity: '0' },
+					'100%': { transform: 'translateX(0)', opacity: '1' }
+				},
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
@@ -163,7 +186,13 @@ export default {
 				'slide-in-from-bottom': 'slideInFromBottom 0.4s ease-out',
 				'expand-width': 'expandWidth 0.4s ease-out',
 				'spin-slow': 'spin 3s linear infinite',
-				'ripple': 'ripple 0.8s ease-out'
+				'ripple': 'ripple 0.8s ease-out',
+				// New animation classes
+				'fade-in-scale': 'fadeInScale 0.3s ease-out',
+				'fade-out-scale': 'fadeOutScale 0.3s ease-out',
+				'bounce-slow': 'bounce 2s ease-in-out infinite',
+				'slide-right': 'slideRight 0.3s ease-out',
+				'slide-left': 'slideLeft 0.3s ease-out',
 			},
 			boxShadow: {
 				'subtle': '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)',
@@ -174,11 +203,13 @@ export default {
 				'card-hover': '0 8px 24px rgba(0, 0, 0, 0.12)',
 				'button': '0 2px 8px -1px rgba(0, 0, 0, 0.12)',
 				'premium': '0 10px 30px -5px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05)',
-				'premium-hover': '0 12px 40px -8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1)'
+				'premium-hover': '0 12px 40px -8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1)',
+				'floating': '0 8px 16px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.08)',
 			},
 			backdropBlur: {
 				'2xs': '2px',
-				'xs': '4px'
+				'xs': '4px',
+				'2xl': '40px',
 			}
 		}
 	},
@@ -187,6 +218,15 @@ export default {
 		// Add a plugin to ensure active variants are available for transform utilities like scale
 		plugin(({ addVariant }) => {
 			addVariant('active', '&:active');
+		}),
+		// Add plugin for safe area insets
+		plugin(({ addUtilities }) => {
+			addUtilities({
+				'.pt-safe': { 'padding-top': 'env(safe-area-inset-top)' },
+				'.pr-safe': { 'padding-right': 'env(safe-area-inset-right)' },
+				'.pb-safe': { 'padding-bottom': 'env(safe-area-inset-bottom)' },
+				'.pl-safe': { 'padding-left': 'env(safe-area-inset-left)' },
+			});
 		})
 	],
 } satisfies Config;

@@ -1,31 +1,30 @@
-
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { Income, IncomeCategory } from '@/types';
+import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
+import {
   Form,
   FormControl,
   FormField,
   FormItem,
   FormLabel,
-  FormMessage
+  FormMessage,
 } from '@/components/ui/form';
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue
+  SelectValue,
 } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
-import { format } from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { getUserCategories } from '@/lib/db';
@@ -34,9 +33,9 @@ import { getUserCategories } from '@/lib/db';
 const DEFAULT_CATEGORIES: { value: IncomeCategory; label: string }[] = [
   { value: 'salary', label: 'Salary' },
   { value: 'freelance', label: 'Freelance' },
-  { value: 'investment', label: 'Investment' },
-  { value: 'gift', label: 'Gift' },
-  { value: 'refund', label: 'Refund' },
+  { value: 'investments', label: 'Investments' },
+  { value: 'rent', label: 'Rent' },
+  { value: 'gifts', label: 'Gifts' },
   { value: 'other', label: 'Other' }
 ];
 
@@ -54,7 +53,7 @@ const formSchema = z.object({
   date: z.date({
     required_error: "Date is required",
   }),
-  category: z.string().min(1, 'Category is required'),
+  category: z.enum(['salary', 'freelance', 'investments', 'rent', 'gifts', 'other'] as const),
   paymentMethod: z.string().optional(),
   notes: z.string().optional()
 });
@@ -67,8 +66,9 @@ interface IncomeFormProps {
   onCancel: () => void;
 }
 
-const IncomeForm = ({ income, onSubmit, onCancel }: IncomeFormProps) => {
-  const [categories, setCategories] = useState<{ value: string; label: string }[]>(DEFAULT_CATEGORIES);
+const IncomeForm: React.FC<IncomeFormProps> = ({ income, onSubmit, onCancel }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<{ value: IncomeCategory; label: string }[]>(DEFAULT_CATEGORIES);
 
   // Load custom categories
   useEffect(() => {
@@ -77,12 +77,15 @@ const IncomeForm = ({ income, onSubmit, onCancel }: IncomeFormProps) => {
         const userCategories = await getUserCategories();
         
         if (userCategories.incomeCategories && userCategories.incomeCategories.length > 0) {
-          const customCategories = userCategories.incomeCategories.map(cat => ({
-            value: cat,
-            label: cat.charAt(0).toUpperCase() + cat.slice(1).replace(/-/g, ' ')
-          }));
+          const defaultValues = DEFAULT_CATEGORIES.map(cat => cat.value);
+          const filteredCustomCategories = userCategories.incomeCategories
+            .filter(cat => !defaultValues.includes(cat as IncomeCategory))
+            .map(cat => ({
+              value: 'other' as IncomeCategory,
+              label: cat.charAt(0).toUpperCase() + cat.slice(1).replace(/-/g, ' ')
+            }));
           
-          setCategories([...DEFAULT_CATEGORIES, ...customCategories]);
+          setCategories([...DEFAULT_CATEGORIES, ...filteredCustomCategories]);
         }
       } catch (error) {
         console.error('Error loading custom categories:', error);
@@ -92,200 +95,154 @@ const IncomeForm = ({ income, onSubmit, onCancel }: IncomeFormProps) => {
     loadCustomCategories();
   }, []);
 
-  // Initialize form with existing income data or defaults
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: income ? {
-      merchantName: income.merchantName,
-      amount: income.amount.toString(),
-      currency: income.currency,
-      date: new Date(income.date),
-      category: income.category,
-      paymentMethod: income.paymentMethod || '',
-      notes: income.notes || ''
-    } : {
-      merchantName: '',
-      amount: '',
-      currency: 'INR',
-      date: new Date(),
-      category: 'salary',
-      paymentMethod: '',
-      notes: ''
+    defaultValues: {
+      merchantName: income?.merchantName || '',
+      amount: income?.amount.toString() || '',
+      date: income?.date ? new Date(income.date) : new Date(),
+      category: income?.category || 'salary',
+      paymentMethod: income?.paymentMethod || '',
+      notes: income?.notes || ''
     }
   });
 
-  const handleSubmit = (values: FormValues) => {
-    const formattedIncome: Income = {
-      id: income?.id || uuidv4(),
-      merchantName: values.merchantName,
-      amount: parseFloat(values.amount),
-      currency: values.currency,
-      date: values.date.toISOString(),
-      category: values.category as IncomeCategory,
-      paymentMethod: values.paymentMethod || undefined,
-      notes: values.notes || undefined,
-      isManualEntry: true,
-      type: 'income'
-    };
-    
-    onSubmit(formattedIncome);
+  const handleSubmit = async (values: FormValues) => {
+    setIsSubmitting(true);
+    try {
+      const formattedIncome: Income = {
+        id: income?.id || uuidv4(),
+        merchantName: values.merchantName,
+        amount: Math.abs(parseFloat(values.amount)),
+        currency: income?.currency || 'INR',
+        date: values.date.toISOString(),
+        category: values.category,
+        paymentMethod: values.paymentMethod || undefined,
+        notes: values.notes || undefined,
+        type: 'income',
+        isManualEntry: true
+      };
+      
+      onSubmit(formattedIncome);
+    } catch (error) {
+      console.error('Error saving income:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Source Name */}
-          <FormField
-            control={form.control}
-            name="merchantName"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Source</FormLabel>
-                <FormControl>
-                  <Input className="input-animated" placeholder="e.g. ABC Company" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="merchantName"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Source Name</FormLabel>
+              <FormControl>
+                <Input placeholder="e.g. Company Name" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-          {/* Amount & Currency */}
-          <div className="flex space-x-3">
-            <FormField
-              control={form.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Amount</FormLabel>
+        <FormField
+          control={form.control}
+          name="amount"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Amount</FormLabel>
+              <FormControl>
+                <Input type="number" step="0.01" placeholder="0.00" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="date"
+          render={({ field }) => (
+            <FormItem className="flex flex-col">
+              <FormLabel>Date</FormLabel>
+              <Popover>
+                <PopoverTrigger asChild>
                   <FormControl>
-                    <Input 
-                      type="number" 
-                      className="input-animated" 
-                      placeholder="0.00" 
-                      step="0.01" 
-                      min="0"
-                      {...field} 
-                    />
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full pl-3 text-left font-normal",
+                        !field.value && "text-muted-foreground"
+                      )}
+                    >
+                      {field.value ? (
+                        format(field.value, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                    </Button>
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="currency"
-              render={({ field }) => (
-                <FormItem className="w-24">
-                  <FormLabel>Currency</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {CURRENCIES.map(currency => (
-                        <SelectItem key={currency} value={currency}>
-                          {currency}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          {/* Date */}
-          <FormField
-            control={form.control}
-            name="date"
-            render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>Date</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-full pl-3 text-left font-normal",
-                          !field.value && "text-muted-foreground"
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {/* Category */}
-          <FormField
-            control={form.control}
-            name="category"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Category</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {categories.map(category => (
-                      <SelectItem key={category.value} value={category.value}>
-                        {category.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {/* Payment Method */}
-          <FormField
-            control={form.control}
-            name="paymentMethod"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Payment Method</FormLabel>
-                <FormControl>
-                  <Input 
-                    className="input-animated" 
-                    placeholder="e.g. Bank Transfer" 
-                    {...field} 
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={field.value}
+                    onSelect={field.onChange}
+                    disabled={(date) =>
+                      date > new Date() || date < new Date("1900-01-01")
+                    }
+                    initialFocus
                   />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+                </PopoverContent>
+              </Popover>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        {/* Notes */}
+        <FormField
+          control={form.control}
+          name="category"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Category</FormLabel>
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {categories.map(category => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="paymentMethod"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Payment Method</FormLabel>
+              <FormControl>
+                <Input placeholder="e.g. Bank Transfer" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         <FormField
           control={form.control}
           name="notes"
@@ -293,10 +250,10 @@ const IncomeForm = ({ income, onSubmit, onCancel }: IncomeFormProps) => {
             <FormItem>
               <FormLabel>Notes</FormLabel>
               <FormControl>
-                <Textarea 
-                  className="resize-none" 
-                  placeholder="Additional details about this income..." 
-                  {...field} 
+                <Textarea
+                  placeholder="Additional details about this income..."
+                  className="resize-none"
+                  {...field}
                 />
               </FormControl>
               <FormMessage />
@@ -304,13 +261,12 @@ const IncomeForm = ({ income, onSubmit, onCancel }: IncomeFormProps) => {
           )}
         />
 
-        {/* Form Actions */}
-        <div className="flex justify-end space-x-3">
+        <div className="flex justify-end space-x-2">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" className="btn-primary">
-            {income ? 'Update Income' : 'Add Income'}
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : 'Save'}
           </Button>
         </div>
       </form>

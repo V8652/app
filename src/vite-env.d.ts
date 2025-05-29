@@ -1,13 +1,6 @@
-
 /// <reference types="vite/client" />
 
 interface Window {
-  Capacitor?: {
-    isNativePlatform?: () => boolean;
-    Plugins?: any;
-    platform?: string;
-    isNative?: boolean;
-  };
   gapi?: {
     client?: {
       load: (api: string, version: string) => Promise<void>;

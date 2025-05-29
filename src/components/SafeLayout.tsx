@@ -1,7 +1,8 @@
 
 import React from 'react';
-import Layout from './Layout';
+import { Layout } from './Layout';
 import { useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
 
 interface SafeLayoutProps {
   children: React.ReactNode;
@@ -17,12 +18,18 @@ const SafeLayout: React.FC<SafeLayoutProps> = ({ children }) => {
   try {
     const location = useLocation();
     currentPath = location.pathname;
+    
+    // Removed auto-scroll to top to prevent page jumps on updates
   } catch (error) {
     // If we're outside router context, use default path
     console.log('Using SafeLayout outside router context');
   }
 
-  return <Layout currentPath={currentPath}>{children}</Layout>;
+  return (
+    <AnimatePresence mode="wait">
+      <Layout>{children}</Layout>
+    </AnimatePresence>
+  );
 };
 
 export default SafeLayout;

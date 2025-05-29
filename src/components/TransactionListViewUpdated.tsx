@@ -1,265 +1,324 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Expense, Income } from '@/types';
+import { getUserCategories } from '@/lib/db';
+import { getCategoryIcon, CategoryIconName, categoryIconMap } from '@/lib/category-icons';
+import { formatCurrency } from '@/lib/utils';
+import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Expense, Income, Transaction } from '@/types';
+import { Pencil, Trash2, ChevronUp, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { deleteTransaction } from '@/lib/db';
 import { toast } from '@/hooks/use-toast';
-import { AlertCircle, ArrowDownCircle, ArrowUpCircle, Filter, Search, Trash2 } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { formatCurrency } from '@/lib/utils';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScrollArea } from '@/components/ui/table';
+import { dbEvents, DatabaseEvent } from '@/lib/db-event';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
-interface TransactionListViewUpdatedProps {
-  transactions: Transaction[];
-  onTransactionDelete: () => void;
-  onTransactionClick: (transaction: Transaction) => void;
-  periodLabel?: string;
+interface TransactionListViewProps {
+  transactions: (Expense | Income)[];
+  onEdit?: (transaction: Expense | Income) => void;
+  onDelete?: (transaction: Expense | Income) => Promise<void>;
 }
 
-const TransactionListViewUpdated = ({ 
-  transactions, 
-  onTransactionDelete, 
-  onTransactionClick,
-  periodLabel = "Current Month" 
-}: TransactionListViewUpdatedProps) => {
-  // State variables
-  const [activeTab, setActiveTab] = useState<'all' | 'expense' | 'income'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [merchantFilter, setMerchantFilter] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'date' | 'amount' | 'name'>('date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+const TransactionListViewUpdated: React.FC<TransactionListViewProps> = ({ transactions, onEdit, onDelete }) => {
+  const [sortedTransactions, setSortedTransactions] = useState<(Expense | Income)[]>([]);
+  const [sortKey, setSortKey] = useState<'date' | 'amount'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [categoryIcons, setCategoryIcons] = useState<Record<string, CategoryIconName>>({});
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
 
-  // Handle delete confirmation
-  const confirmDelete = (transaction: Transaction) => {
-    setTransactionToDelete(transaction);
-    setDeleteConfirmOpen(true);
+  // Load custom category icons and colors
+  const loadCategoryData = async () => {
+    try {
+      const userCategories = await getUserCategories();
+      if (userCategories.categoryIcons) {
+        setCategoryIcons(userCategories.categoryIcons as Record<string, CategoryIconName>);
+      }
+      if (userCategories.categoryColors) {
+        setCategoryColors(userCategories.categoryColors);
+      }
+    } catch (error) {
+      console.error('Error loading category data:', error);
+    }
   };
 
-  // Handle actual delete action
-  const handleDelete = async () => {
-    if (!transactionToDelete) return;
-    
+  // Initial load of category data
+  useEffect(() => {
+    loadCategoryData();
+  }, []);
+
+  // Listen for category changes
+  useEffect(() => {
+    const handleCategoryChange = () => {
+      loadCategoryData();
+    };
+
+    const unsubscribeCategory = dbEvents.subscribe(DatabaseEvent.CATEGORY_UPDATED, handleCategoryChange);
+    const unsubscribeData = dbEvents.subscribe(DatabaseEvent.DATA_IMPORTED, handleCategoryChange);
+    const unsubscribeUI = dbEvents.subscribe(DatabaseEvent.UI_REFRESH_NEEDED, handleCategoryChange);
+
+    return () => {
+      unsubscribeCategory();
+      unsubscribeData();
+      unsubscribeUI();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Force re-render when transactions change
+    setRefreshTrigger(prev => prev + 1);
+  }, [transactions]);
+
+  useEffect(() => {
+    const sortTransactions = () => {
+      const sorted = [...transactions].sort((a, b) => {
+        const order = sortOrder === 'asc' ? 1 : -1;
+        if (sortKey === 'date') {
+          return order * (new Date(a.date).getTime() - new Date(b.date).getTime());
+        } else if (sortKey === 'amount') {
+          return order * (a.amount - b.amount);
+        }
+        return 0;
+      });
+      setSortedTransactions(sorted);
+    };
+
+    sortTransactions();
+  }, [transactions, sortKey, sortOrder, refreshTrigger]);
+
+  const handleSort = (key: 'date' | 'amount') => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortOrder('desc');
+    }
+  };
+
+  const handleDelete = async (transaction: Expense | Income) => {
     try {
-      await deleteTransaction(transactionToDelete.id, transactionToDelete.type);
+      await deleteTransaction(transaction.id);
+      
       toast({
         title: 'Transaction deleted',
-        description: 'Transaction has been successfully removed.'
+        description: 'The transaction has been removed successfully',
       });
-      onTransactionDelete();
+      
+      // Emit multiple events to ensure UI updates everywhere
+      setTimeout(() => {
+        dbEvents.emit(DatabaseEvent.TRANSACTION_DELETED);
+        dbEvents.emit(DatabaseEvent.DATA_IMPORTED);
+        dbEvents.emit(DatabaseEvent.BALANCE_UPDATED);
+        dbEvents.emit(DatabaseEvent.UI_REFRESH_NEEDED);
+        
+        // Call parent onDelete callback if provided
+        if (onDelete) {
+          onDelete(transaction);
+        }
+      }, 100);
     } catch (error) {
       console.error('Error deleting transaction:', error);
       toast({
         title: 'Error',
         description: 'Failed to delete transaction. Please try again.',
-        variant: 'destructive'
+        variant: 'destructive',
       });
     }
-    
-    setDeleteConfirmOpen(false);
-    setTransactionToDelete(null);
   };
 
-  // Filter transactions based on active tab
-  const filteredTransactions = transactions.filter(transaction => {
-    if (activeTab === 'all') return true;
-    return transaction.type === activeTab;
-  });
+  // Get category icon and color with fallbacks
+  const getCategoryData = (category: string, isIncome: boolean) => {
+    const categoryColor = categoryColors[category] || 
+      (isIncome ? '#10b981' : '#ef4444');
+    
+    const CategoryIcon = categoryIcons[category] 
+      ? categoryIconMap[categoryIcons[category]] || categoryIconMap.DollarSign
+      : getCategoryIcon(category);
 
-  // Apply search query filter
-  const searchedTransactions = filteredTransactions.filter(transaction => {
-    const searchTerm = searchQuery.toLowerCase();
-    return (
-      transaction.merchantName?.toLowerCase().includes(searchTerm) ||
-      transaction.description?.toLowerCase().includes(searchTerm) ||
-      transaction.notes?.toLowerCase().includes(searchTerm) ||
-      transaction.category.toLowerCase().includes(searchTerm) ||
-      transaction.amount.toString().includes(searchTerm)
-    );
-  });
-
-  // Apply category and merchant filters
-  const categoryFilteredTransactions = searchedTransactions.filter(transaction => {
-    if (!categoryFilter) return true;
-    return transaction.category === categoryFilter;
-  });
-
-  const merchantFilteredTransactions = categoryFilteredTransactions.filter(transaction => {
-    if (!merchantFilter) return true;
-    return transaction.merchantName?.toLowerCase().includes(merchantFilter.toLowerCase());
-  });
-
-  // Sort transactions
-  const sortedTransactions = [...merchantFilteredTransactions].sort((a, b) => {
-    let comparison = 0;
-
-    if (sortBy === 'date') {
-      comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
-    } else if (sortBy === 'amount') {
-      comparison = a.amount - b.amount;
-    } else if (sortBy === 'name') {
-      comparison = (a.merchantName || '').localeCompare(b.merchantName || '');
-    }
-
-    return sortDirection === 'asc' ? comparison : -comparison;
-  });
+    return { categoryColor, CategoryIcon };
+  };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Transactions - {periodLabel}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="all" className="mb-4" onValueChange={(value) => setActiveTab(value as 'all' | 'expense' | 'income')}>
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="expense">Expenses</TabsTrigger>
-            <TabsTrigger value="income">Incomes</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div className="flex items-center space-x-2">
-            <Input
-              type="search"
-              placeholder="Search transactions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <Button variant="outline" size="icon" onClick={() => setShowFilters(!showFilters)}>
-              <Filter className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Category Filter:</label>
-              <Input
-                type="text"
-                placeholder="Filter by category..."
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Merchant Filter:</label>
-              <Input
-                type="text"
-                placeholder="Filter by merchant..."
-                value={merchantFilter}
-                onChange={(e) => setMerchantFilter(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Sort By:</label>
-              <select
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'date' | 'amount' | 'name')}
+    <div className="w-full overflow-hidden rounded-xl border force-refresh-animation shadow-sm bg-card" key={`transaction-list-${refreshTrigger}`}>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30 hover:bg-muted/40">
+              <TableHead 
+                onClick={() => handleSort('date')} 
+                className="w-[130px] cursor-pointer hover:text-primary transition-colors"
               >
-                <option value="date">Date</option>
-                <option value="amount">Amount</option>
-                <option value="name">Merchant</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Sort Direction:</label>
-              <select
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                value={sortDirection}
-                onChange={(e) => setSortDirection(e.target.value as 'asc' | 'desc')}
+                <div className="flex items-center">
+                  Date
+                  {sortKey === 'date' && (
+                    <span className="ml-1">
+                      {sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </span>
+                  )}
+                </div>
+              </TableHead>
+              <TableHead className="max-w-[200px]">
+                Description
+              </TableHead>
+              <TableHead 
+                onClick={() => handleSort('amount')} 
+                className="w-[130px] cursor-pointer hover:text-primary transition-colors"
               >
-                <option value="asc">Ascending</option>
-                <option value="desc">Descending</option>
-              </select>
-            </div>
-          </div>
-        )}
+                <div className="flex items-center">
+                  Amount
+                  {sortKey === 'amount' && (
+                    <span className="ml-1">
+                      {sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </span>
+                  )}
+                </div>
+              </TableHead>
+              <TableHead className="w-[120px]">
+                Category
+              </TableHead>
+              <TableHead className="w-[80px]">
+                Type
+              </TableHead>
+              <TableHead className="w-[100px] text-right">
+                Actions
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <AnimatePresence>
+              {sortedTransactions.map((transaction, index) => {
+                const isIncome = transaction.type === 'income';
+                const { categoryColor, CategoryIcon } = getCategoryData(transaction.category, isIncome);
 
-        {sortedTransactions.length === 0 ? (
-          <div className="flex items-center justify-center space-x-2">
-            <AlertCircle className="h-4 w-4" />
-            <span>No transactions found.</span>
-          </div>
-        ) : (
-          <div className="w-full rounded-md border">
-            <TableScrollArea>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Merchant</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedTransactions.map(transaction => (
-                    <TableRow key={transaction.id} className="cursor-pointer" onClick={() => onTransactionClick(transaction)}>
-                      <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        {transaction.type === 'expense' ? (
-                          <div className="flex items-center">
-                            <ArrowDownCircle className="text-red-500 h-4 w-4 mr-2" />
-                            <span>Expense</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center">
-                            <ArrowUpCircle className="text-green-500 h-4 w-4 mr-2" />
-                            <span>Income</span>
-                          </div>
+                return (
+                  <motion.tr
+                    key={`${transaction.id}-${refreshTrigger}`}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, delay: index * 0.03 }}
+                    exit={{ opacity: 0 }}
+                    className="hover:bg-muted/20 cursor-pointer"
+                    onClick={() => onEdit && onEdit(transaction)}
+                  >
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {format(new Date(transaction.date), 'MMM d, yyyy')}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="p-1 rounded-full"
+                          style={{ backgroundColor: `${categoryColor}20` }}
+                        >
+                          <CategoryIcon className="h-4 w-4" style={{ color: categoryColor }} />
+                        </div>
+                        <span className="font-medium truncate">
+                          {transaction.merchantName}
+                        </span>
+                      </div>
+                      {/* Only show notes if not empty and not auto-extracted */}
+                      {transaction.notes && transaction.notes.trim() !== '' && !transaction.notes.startsWith('Auto-extracted from SMS. Bank:') && (
+                        <div className="text-xs text-muted-foreground mt-1">{transaction.notes}</div>
+                      )}
+                    </TableCell>
+                    <TableCell className={isIncome ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                      <div className="flex items-center">
+                        {isIncome ?
+                          <ArrowUp className="h-3 w-3 mr-1" /> :
+                          <ArrowDown className="h-3 w-3 mr-1" />
+                        }
+                        {/* Always show minus for expense */}
+                        {isIncome ? '+' : '-'}{formatCurrency(Math.abs(transaction.amount), transaction.currency)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="px-2 py-1 text-xs rounded-full"
+                          style={{ 
+                            backgroundColor: `${categoryColor}20`,
+                            color: categoryColor
+                          }}
+                        >
+                          {transaction.category}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        isIncome ?
+                          'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                          'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                      }`}>
+                        {isIncome ? 'Income' : 'Expense'}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        {onEdit && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="h-8 w-8 rounded-full hover:bg-muted"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEdit(transaction);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            <span className="sr-only">Edit</span>
+                          </Button>
                         )}
-                      </TableCell>
-                      <TableCell>{transaction.merchantName || 'N/A'}</TableCell>
-                      <TableCell>{transaction.category}</TableCell>
-                      <TableCell className={transaction.type === 'expense' ? 'text-red-500' : 'text-green-500'}>
-                        {formatCurrency(transaction.amount, transaction.currency)}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={(e) => {
-                          e.stopPropagation();
-                          confirmDelete(transaction);
-                        }}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableScrollArea>
-          </div>
-        )}
-
-        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Confirm Delete</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete this transaction? This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="button" variant="destructive" onClick={handleDelete}>
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </CardContent>
-    </Card>
+                        {onDelete && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(transaction);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Delete</span>
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </motion.tr>
+                );
+              })}
+            </AnimatePresence>
+          </TableBody>
+          {/* --- Merchant Extraction Patterns UI (for settings or rule editor, not for transaction list) --- */}
+          {/* <div className="mt-4">
+            <label className="block font-medium mb-1">Merchant Extraction Patterns</label>
+            {merchantPatterns.map((pattern, idx) => (
+              <div key={idx} className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  value={pattern}
+                  onChange={e => handleMerchantPatternChange(idx, e.target.value)}
+                  className="input input-bordered w-full"
+                  placeholder="Enter merchant regex pattern"
+                />
+                <Button variant="destructive" size="icon" onClick={() => removeMerchantPattern(idx)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            <Button variant="outline" size="sm" onClick={addMerchantPattern}>
+              + Add Pattern
+            </Button>
+          </div> */}
+        </Table>
+      </div>
+    </div>
   );
 };
 
